@@ -1,20 +1,19 @@
-//! Resource gathering state management.
-//!
-//! Owns `ResourceGatherer` and `GatheringState` components.
-//! All mutations go through events defined in `events`.
-
 pub mod construction;
 pub mod events;
+pub mod gathering;
 
 use crate::core::components::*;
+use crate::core::resources::Stockpiles;
 use bevy::prelude::*;
 use self::events::*;
+use self::gathering::gathering_system;
 
 pub struct ResourceStatePlugin;
 
 impl Plugin for ResourceStatePlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ClearTargetResourceEvent>()
+        app.init_resource::<Stockpiles>()
+            .add_event::<ClearTargetResourceEvent>()
             .add_event::<SetTargetResourceEvent>()
             .add_event::<ClearMovementEvent>()
             .add_event::<ResetCargoEvent>()
@@ -24,6 +23,7 @@ impl Plugin for ResourceStatePlugin {
                     add_gathering_state_to_gatherers,
                     resource_state_system,
                     update_gathering_states,
+                    gathering_system,
                 )
                     .chain(),
             );
@@ -40,7 +40,7 @@ fn add_gathering_state_to_gatherers(
     }
 }
 
-/// Sole writer of `ResourceGatherer` — applies all mutations via events.
+/// Sole writer of `ResourceGatherer.target_resource` — applies all mutations via events.
 /// Movement/pathfinding clearing is handled by MovementPlugin (ClearMovementEvent consumer).
 pub fn resource_state_system(
     mut gatherers: Query<&mut ResourceGatherer>,
@@ -72,7 +72,9 @@ pub fn resource_state_system(
         };
         gatherer.carried_amount = 0.0;
         gatherer.resource_type = None;
-        gatherer.target_resource = None;
+        // target_resource is intentionally preserved — tick_gathering uses it to send the
+        // worker back to the resource automatically. It is cleared separately via
+        // ClearTargetResourceEvent (e.g. when the resource is depleted).
     }
 }
 

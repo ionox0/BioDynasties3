@@ -30,6 +30,7 @@ fn spawn_test_entities(mut commands: Commands, asset_server: Res<AssetServer>) {
         Selectable::default(),
         RTSHealth { current: 100.0, max: 100.0 },
         ResourceGatherer {
+            gather_rate: 5.0,
             capacity: 10.0,
             carried_amount: 0.0,
             resource_type: None,
@@ -42,6 +43,7 @@ fn spawn_test_entities(mut commands: Commands, asset_server: Res<AssetServer>) {
         SceneRoot(asset_server.load("models/objects/anthill.glb#Scene0")),
         Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(20.0)),
         Building {
+            player_id: 1,
             building_type: BuildingType::Queen,
             construction_progress: 100.0,
             max_construction: 100.0,
@@ -51,11 +53,14 @@ fn spawn_test_entities(mut commands: Commands, asset_server: Res<AssetServer>) {
         CollisionRadius { radius: 20.0 },
     ));
 
-    // Pine cone — nectar resource source
+    // Pine cone — nectar resource source (placed north, away from hills)
     commands.spawn((
         SceneRoot(asset_server.load("models/objects/pine_cone.glb#Scene0")),
-        Transform::from_xyz(200.0, 0.0, 80.0).with_scale(Vec3::splat(10.0)),
-        ResourceSource,
+        Transform::from_xyz(100.0, 0.0, -200.0).with_scale(Vec3::splat(10.0)),
+        ResourceSource {
+            resource_type: ResourceType::Nectar,
+            amount: 300.0,
+        },
         CollisionRadius { radius: 8.0 },
     ));
 }

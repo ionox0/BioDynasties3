@@ -2,12 +2,16 @@
 //!
 //! Translates right-click mouse input into movement and resource targeting events.
 //! Does not mutate any component directly.
+//!
+//! For AI units: send the same events (SetTargetResourceEvent + MovementTargetEvent)
+//! from the AI goal system — the gathering loop is identical.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::resource_interaction::RESOURCE_CLICK_RADIUS;
 use crate::core::constants::ui::*;
+use crate::rts::resource::events::SetTargetResourceEvent;
 use super::events::MovementTargetEvent;
 
 pub struct UnitCommandsPlugin;
@@ -20,12 +24,13 @@ impl Plugin for UnitCommandsPlugin {
 
 #[derive(SystemParam)]
 struct CommandTargets<'w, 's> {
-    selected: Query<'w, 's, (Entity, &'static Selectable), With<RTSUnit>>,
-    resources: Query<'w, 's, (Entity, &'static Transform), With<ResourceSource>>,
+    selectables: Query<'w, 's, (Entity, &'static Selectable, Option<&'static ResourceGatherer>), With<RTSUnit>>,
+    resources: Query<'w, 's, (Entity, &'static Transform, &'static ResourceSource)>,
     move_events: EventWriter<'w, MovementTargetEvent>,
+    set_target_events: EventWriter<'w, SetTargetResourceEvent>,
 }
 
-/// Issues move orders to all selected units on right-click.
+/// Issues move orders (and optional gather orders) to all selected units on right-click.
 fn right_click_command(
     mouse_button: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -54,34 +59,42 @@ fn right_click_command(
         return;
     };
 
-    let destination = closest_resource_pos(&targets.resources, ground_pos)
+    let resource_click = closest_resource(&targets.resources, ground_pos);
+    let destination = resource_click
+        .as_ref()
+        .map(|(_, pos, _)| *pos)
         .unwrap_or(ground_pos);
 
-    let selected: Vec<Entity> = targets
-        .selected
-        .iter()
-        .filter(|(_, s)| s.is_selected)
-        .map(|(e, _)| e)
-        .collect();
-
-    for entity in selected {
+    for (entity, selectable, gatherer_opt) in targets.selectables.iter() {
+        if !selectable.is_selected {
+            continue;
+        }
+        if let (Some((resource_entity, _, resource_type)), Some(_)) =
+            (&resource_click, &gatherer_opt)
+        {
+            targets.set_target_events.send(SetTargetResourceEvent {
+                gatherer: entity,
+                target_resource: *resource_entity,
+                resource_type: resource_type.clone(),
+            });
+        }
         targets.move_events.send(MovementTargetEvent { entity, target_position: destination });
     }
 }
 
-/// Returns the position of the nearest ResourceSource within click radius, if any.
-fn closest_resource_pos(
-    resources: &Query<(Entity, &Transform), With<ResourceSource>>,
+/// Returns the nearest ResourceSource within click radius, if any.
+fn closest_resource(
+    resources: &Query<(Entity, &Transform, &ResourceSource)>,
     ground_pos: Vec3,
-) -> Option<Vec3> {
+) -> Option<(Entity, Vec3, ResourceType)> {
     resources
         .iter()
-        .filter_map(|(_, tf)| {
+        .filter_map(|(entity, tf, source)| {
             let d = tf.translation.distance(ground_pos);
-            (d < RESOURCE_CLICK_RADIUS).then_some((d, tf.translation))
+            (d < RESOURCE_CLICK_RADIUS).then_some((d, entity, tf.translation, source.resource_type.clone()))
         })
         .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-        .map(|(_, pos)| pos)
+        .map(|(_, entity, pos, resource_type)| (entity, pos, resource_type))
 }
 
 /// Intersects a ray with the y=0 ground plane. Returns None if ray points away from plane.

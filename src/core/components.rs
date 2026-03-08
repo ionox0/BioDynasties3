@@ -164,9 +164,11 @@ impl Default for CombatState {
     }
 }
 
-// Owned by: ResourceStateSystem (resource_state_system)
+// target_resource owned by: ResourceStatePlugin (resource_state_system via events)
+// carried_amount + resource_type owned by: GatheringPlugin (gathering_system, direct write)
 #[derive(Component, Debug, Clone)]
 pub struct ResourceGatherer {
+    pub gather_rate: f32,
     pub capacity: f32,
     pub carried_amount: f32,
     pub resource_type: Option<ResourceType>,
@@ -182,13 +184,17 @@ pub enum ResourceType {
 }
 
 
-// Owned by: ResourcePlugin (resource_collection_system)
+// Owned by: GatheringPlugin (gathering_system) — amount decremented on gather, despawned when depleted
 #[derive(Component, Debug, Clone)]
-pub struct ResourceSource;
+pub struct ResourceSource {
+    pub resource_type: ResourceType,
+    pub amount: f32,
+}
 
 // Owned by: ConstructionPlugin (apply_construction_progress)
 #[derive(Component, Debug, Clone)]
 pub struct Building {
+    pub player_id: u8,
     pub building_type: BuildingType,
     pub construction_progress: f32,
     pub max_construction: f32,
