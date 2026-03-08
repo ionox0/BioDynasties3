@@ -3,6 +3,8 @@
 //! Owns `CombatState` component.
 //! Derives it each frame from `Combat` and spatial data.
 
+pub mod events;
+
 use crate::core::components::*;
 use bevy::prelude::*;
 

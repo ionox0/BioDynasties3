@@ -15,7 +15,7 @@ use core::CollisionPlugin;
 use debug::DebugPlugin;
 use entities::LifecyclePlugin;
 use rendering::{AnimationPlugin, HoverEffectsPlugin};
-use rts::{CombatStatePlugin, ConstructionPlugin, PathfindingPlugin, ResourceStatePlugin, SelectionPlugin};
+use rts::{CombatStatePlugin, ConstructionPlugin, MovementPlugin, PathfindingPlugin, ResourceStatePlugin, SelectionPlugin, UnitCommandsPlugin};
 use scene::ScenePlugin;
 use ui::UIPlugin;
 use world::{GridPlugin, SimpleMaterialPlugin, StaticTerrainPlugin};
@@ -49,6 +49,8 @@ fn main() {
             ResourceStatePlugin,
             SelectionPlugin,
             ConstructionPlugin,
+            MovementPlugin,
+            UnitCommandsPlugin,
             UIPlugin,
         ))
         .run();

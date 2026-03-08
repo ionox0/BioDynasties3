@@ -49,11 +49,28 @@ pub struct Movement {
     pub target_position: Option<Vec3>,
 }
 
-// Owned by: PathfindingPlugin (setup_pathfinding_grid)
-#[derive(Component, Debug, Clone, Default)]
+// Owned by: PathfindingPlugin (pathfinding_system) and MovementPlugin (path_index advancement)
+#[derive(Component, Debug, Clone)]
 pub struct PathfindingState {
+    /// World-space waypoints produced by A*.
     pub path: Vec<Vec3>,
+    /// Index of the next waypoint to head toward.
     pub path_index: usize,
+    /// Bevy elapsed time of the last pathfinding failure (NEG_INFINITY = no failure yet).
+    pub last_pathfinding_failure: f32,
+    /// Target that triggered the last failure — cleared when a new target arrives.
+    pub last_failed_target: Option<Vec3>,
+}
+
+impl Default for PathfindingState {
+    fn default() -> Self {
+        Self {
+            path: Vec::new(),
+            path_index: 0,
+            last_pathfinding_failure: f32::NEG_INFINITY,
+            last_failed_target: None,
+        }
+    }
 }
 
 /// Component to track spatial grid position for incremental updates

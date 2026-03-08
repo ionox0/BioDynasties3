@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::core::components::{MainCamera, RTSCamera};
+use crate::core::components::*;
 use crate::core::constants::{camera, movement};
 use crate::world::static_terrain::StaticTerrainHeights;
 
@@ -10,9 +10,54 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_scene)
+        app.add_systems(Startup, (setup_scene, spawn_test_entities))
             .add_systems(Update, handle_rts_camera_input);
     }
+}
+
+/// Spawns a worker ant, anthill base, and a nectar resource for basic system testing.
+fn spawn_test_entities(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Worker ant — player unit with resource gathering capability
+    commands.spawn((
+        SceneRoot(asset_server.load("models/insects/fourmi.glb#Scene0")),
+        Transform::from_xyz(80.0, 1.0, 0.0).with_scale(Vec3::splat(15.0)),
+        RTSUnit { player_id: 1, unit_type: Some(UnitType::WorkerAnt) },
+        Movement { max_speed: 80.0, current_velocity: Vec3::ZERO, target_position: None },
+        PathfindingState::default(),
+        Position { translation: Vec3::new(80.0, 1.0, 0.0) },
+        CollisionRadius { radius: 6.0 },
+        SpatialGridPosition::default(),
+        Selectable::default(),
+        RTSHealth { current: 100.0, max: 100.0 },
+        ResourceGatherer {
+            capacity: 10.0,
+            carried_amount: 0.0,
+            resource_type: None,
+            target_resource: None,
+        },
+    ));
+
+    // Anthill — player base (complete, no construction needed)
+    commands.spawn((
+        SceneRoot(asset_server.load("models/objects/anthill.glb#Scene0")),
+        Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(20.0)),
+        Building {
+            building_type: BuildingType::Queen,
+            construction_progress: 100.0,
+            max_construction: 100.0,
+            is_complete: true,
+        },
+        Position { translation: Vec3::ZERO },
+        CollisionRadius { radius: 20.0 },
+    ));
+
+    // Pine cone — nectar resource source
+    commands.spawn((
+        SceneRoot(asset_server.load("models/objects/pine_cone.glb#Scene0")),
+        Transform::from_xyz(200.0, 0.0, 80.0).with_scale(Vec3::splat(10.0)),
+        ResourceSource,
+        CollisionRadius { radius: 8.0 },
+    ));
 }
 
 fn setup_scene(mut commands: Commands) {

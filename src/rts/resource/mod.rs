@@ -1,11 +1,14 @@
 //! Resource gathering state management.
 //!
 //! Owns `ResourceGatherer` and `GatheringState` components.
-//! All mutations go through events defined in `resource_events`.
+//! All mutations go through events defined in `events`.
+
+pub mod construction;
+pub mod events;
 
 use crate::core::components::*;
-use crate::rts::resource_events::*;
 use bevy::prelude::*;
+use self::events::*;
 
 pub struct ResourceStatePlugin;
 
@@ -38,15 +41,15 @@ fn add_gathering_state_to_gatherers(
 }
 
 /// Sole writer of `ResourceGatherer` — applies all mutations via events.
+/// Movement/pathfinding clearing is handled by MovementPlugin (ClearMovementEvent consumer).
 pub fn resource_state_system(
-    mut gatherers: Query<(&mut ResourceGatherer, &mut Movement, &mut PathfindingState)>,
+    mut gatherers: Query<&mut ResourceGatherer>,
     mut clear_target_events: EventReader<ClearTargetResourceEvent>,
     mut set_target_events: EventReader<SetTargetResourceEvent>,
-    mut clear_movement_events: EventReader<ClearMovementEvent>,
     mut reset_cargo_events: EventReader<ResetCargoEvent>,
 ) {
     for event in clear_target_events.read() {
-        let Ok((mut gatherer, _, _)) = gatherers.get_mut(event.gatherer) else {
+        let Ok(mut gatherer) = gatherers.get_mut(event.gatherer) else {
             continue;
         };
         gatherer.target_resource = None;
@@ -56,24 +59,15 @@ pub fn resource_state_system(
     }
 
     for event in set_target_events.read() {
-        let Ok((mut gatherer, _, _)) = gatherers.get_mut(event.gatherer) else {
+        let Ok(mut gatherer) = gatherers.get_mut(event.gatherer) else {
             continue;
         };
         gatherer.target_resource = Some(event.target_resource);
         gatherer.resource_type = Some(event.resource_type.clone());
     }
 
-    for event in clear_movement_events.read() {
-        let Ok((_, mut movement, mut pf_state)) = gatherers.get_mut(event.gatherer) else {
-            continue;
-        };
-        movement.target_position = None;
-        pf_state.path.clear();
-        pf_state.path_index = 0;
-    }
-
     for event in reset_cargo_events.read() {
-        let Ok((mut gatherer, _, _)) = gatherers.get_mut(event.gatherer) else {
+        let Ok(mut gatherer) = gatherers.get_mut(event.gatherer) else {
             continue;
         };
         gatherer.carried_amount = 0.0;
