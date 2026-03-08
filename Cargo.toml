@@ -1,0 +1,56 @@
+[package]
+name = "bio-dynasties"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+debug = 2               # Full debug info for maximum debugger support
+opt-level = 0          # No optimization for debuggable code
+overflow-checks = true # Runtime checks for safety
+lto = false            # Disable link-time optimization to prevent inlining
+codegen-units = 256    # Parallel compilation for faster builds
+incremental = true     # Incremental compilation
+panic = "unwind"       # Better stack traces and debugging
+split-debuginfo = "unpacked"  # Better debugger support on macOS
+
+# Fast debug builds for dependencies (keeps our code debug-friendly)
+[profile.dev.package."*"]
+opt-level = 3
+
+# Ensure our main crate is never optimized in debug mode
+[profile.dev.package.bio-dynasties]
+opt-level = 0
+debug = 2
+
+# Bevy-specific optimizations for dev builds
+[profile.dev.package.bevy_dylib]
+opt-level = 3
+
+[profile.release]
+debug = false
+strip = false
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[dependencies]
+bevy = { version = "0.15", features = ["jpeg", "trace"] }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+noise = "0.9"
+hashbrown = "0.15"
+bevy_animation = "0.15.0"
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = "0.3.20"
+tracing-attributes = "0.1"
+tracing-flame = "0.2.0"
+
+[lints.clippy]
+needless_late_init = "warn"
+trailing_empty_array = "warn"
+semicolon_if_nothing_returned = "warn"
+needless_else = "warn"
+needless_continue = "warn"
+similar_names = "allow"
