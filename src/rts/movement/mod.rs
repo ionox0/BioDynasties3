@@ -1,10 +1,11 @@
 //! Unit movement system.
 //!
 //! Owns: `Movement.target_position / current_velocity`, `PathfindingState.path_index`
-//! Inputs: `MovementTargetEvent`, `ClearMovementEvent`
+//! Inputs: `MovementTargetEvent`, `StopMovementEvent`
+//! Outputs: `UnitArrivedEvent` (fired when a unit exhausts its path)
 //!
 //! System order each Update frame:
-//!   apply_movement_targets → clear_movement_targets → pathfinding_system → move_units → sync_position_component
+//!   apply_movement_targets → stop_unit_movement → pathfinding_system → move_units → sync_position_component
 
 pub mod events;
 pub mod formation;
@@ -16,9 +17,8 @@ pub mod unstuck;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::movement as mc;
-use crate::rts::resource::events::ClearMovementEvent;
 use crate::world::static_terrain::StaticTerrainHeights;
-use self::events::{MovementTargetEvent, StopMovementEvent};
+use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
 use self::pathfinding::pathfinding_system;
 use self::unstuck::{add_stuck_detection, unstuck_system};
 
@@ -28,13 +28,13 @@ impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<MovementTargetEvent>()
             .add_event::<StopMovementEvent>()
+            .add_event::<UnitArrivedEvent>()
             .add_systems(
                 Update,
                 (
                     add_stuck_detection,
                     apply_movement_targets,
                     stop_unit_movement,
-                    clear_movement_targets,
                     pathfinding_system,
                     move_units,
                     sync_position_component,
@@ -78,20 +78,6 @@ fn stop_unit_movement(
     }
 }
 
-/// Clears movement when `ClearMovementEvent` fires (sent by resource logic).
-fn clear_movement_targets(
-    mut units: Query<(&mut Movement, &mut PathfindingState)>,
-    mut events: EventReader<ClearMovementEvent>,
-) {
-    for ev in events.read() {
-        let Ok((mut mv, mut pf)) = units.get_mut(ev.gatherer) else { continue };
-        mv.target_position = None;
-        mv.current_velocity = Vec3::ZERO;
-        pf.path.clear();
-        pf.path_index = 0;
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Movement
 // ---------------------------------------------------------------------------
@@ -102,13 +88,15 @@ struct StepCtx<'a> {
 }
 
 /// Moves all units each frame, following their A* path.
+/// Fires `UnitArrivedEvent` when a unit exhausts its path and clears its target.
 fn move_units(
-    mut units: Query<(&mut Transform, &mut Movement, &mut PathfindingState, &RTSUnit)>,
+    mut units: Query<(Entity, &mut Transform, &mut Movement, &mut PathfindingState, &RTSUnit)>,
     terrain: Res<StaticTerrainHeights>,
     time: Res<Time>,
+    mut arrived: EventWriter<UnitArrivedEvent>,
 ) {
     let ctx = StepCtx { terrain: &terrain, dt: time.delta_secs().min(0.033) };
-    for (mut tf, mut mv, mut pf, rts_unit) in units.iter_mut() {
+    for (entity, mut tf, mut mv, mut pf, rts_unit) in units.iter_mut() {
         if mv.target_position.is_none() {
             mv.current_velocity = Vec3::ZERO;
             snap_to_terrain(&mut tf, ctx.terrain);
@@ -116,6 +104,10 @@ fn move_units(
         }
         if let Some(dir) = step_path(&mut tf, &mut mv, &mut pf, &ctx) {
             update_rotation(&mut tf, dir, rts_unit, ctx.dt);
+        }
+        // target_position cleared inside step_path means path was exhausted — unit arrived.
+        if mv.target_position.is_none() {
+            arrived.send(UnitArrivedEvent { entity });
         }
     }
 }

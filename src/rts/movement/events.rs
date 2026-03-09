@@ -16,3 +16,10 @@ pub struct MovementTargetEvent {
 pub struct StopMovementEvent {
     pub entity: Entity,
 }
+
+/// Fired by MovementPlugin when a unit exhausts its path and clears its target_position.
+/// Signals arrival at the intended destination.
+#[derive(Event, Debug, Clone)]
+pub struct UnitArrivedEvent {
+    pub entity: Entity,
+}

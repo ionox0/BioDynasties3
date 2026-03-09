@@ -49,7 +49,6 @@ impl Plugin for ResourceStatePlugin {
         app.init_resource::<Stockpiles>()
             .add_event::<ClearTargetResourceEvent>()
             .add_event::<SetTargetResourceEvent>()
-            .add_event::<ClearMovementEvent>()
             .add_event::<ResetCargoEvent>()
             .add_systems(
                 Update,
@@ -75,7 +74,6 @@ fn add_gathering_state_to_gatherers(
 }
 
 /// Sole writer of `ResourceGatherer.target_resource` — applies all mutations via events.
-/// Movement/pathfinding clearing is handled by MovementPlugin (ClearMovementEvent consumer).
 pub fn resource_state_system(
     mut gatherers: Query<&mut ResourceGatherer>,
     mut clear_target_events: EventReader<ClearTargetResourceEvent>,

@@ -17,12 +17,6 @@ pub struct SetTargetResourceEvent {
     pub resource_type: ResourceType,
 }
 
-/// Event sent to clear a gatherer's movement and pathfinding state
-#[derive(Event, Debug, Clone)]
-pub struct ClearMovementEvent {
-    pub gatherer: Entity,
-}
-
 /// Event sent to reset a gatherer's cargo after delivery
 #[derive(Event, Debug, Clone)]
 pub struct ResetCargoEvent {
