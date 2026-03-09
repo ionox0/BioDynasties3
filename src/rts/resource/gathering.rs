@@ -66,6 +66,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
+use super::{GatheringState, GatheringStateType};
 use crate::core::constants::resource_interaction::{GATHERING_DISTANCE, DROPOFF_TRAVEL_DISTANCE};
 use crate::core::resources::Stockpiles;
 use super::events::{ClearTargetResourceEvent, ResetCargoEvent};

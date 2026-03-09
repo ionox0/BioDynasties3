@@ -1,5 +1,6 @@
 use bevy::ecs::system::SystemParam;
 use crate::core::components::*;
+use crate::rts::resource::{GatheringState, GatheringStateType};
 use bevy::prelude::*;
 use bevy_animation::graph::AnimationNodeIndex;
 use bevy_animation::prelude::{AnimationGraph, AnimationGraphHandle};

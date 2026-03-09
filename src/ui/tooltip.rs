@@ -1,4 +1,5 @@
 use crate::core::components::*;
+use crate::rts::resource::{GatheringState, GatheringStateType};
 use bevy::prelude::*;
 use bevy::ecs::system::SystemParam;
 
@@ -131,22 +132,6 @@ fn get_unit_task(
     }
 
 
-    // Check if gathering resources
-    if let Ok(gatherer) = gatherer_query.get(entity) {
-        if let Some(ref resource_type) = gatherer.resource_type {
-            if gatherer.carried_amount > 0.0 {
-                return format!(
-                    "Returning {:?} ({:.0})",
-                    resource_type, gatherer.carried_amount
-                );
-            } else if gatherer.target_resource.is_some() {
-                return format!("Gathering {:?}", resource_type);
-            }
-        }
-    }
-
-    // Check specialized states for more accurate state information
-
     // Check for death first
     if let Ok(health) = health_query.get(entity) {
         if health.current <= 0.0 {
@@ -154,14 +139,26 @@ fn get_unit_task(
         }
     }
 
-    // Check gathering state
+    // Check gathering state — authoritative label; augmented with cargo info from ResourceGatherer
     if let Ok(gathering_state) = gathering_state_query.get(entity) {
+        let gatherer = gatherer_query.get(entity).ok();
         match gathering_state.state {
             GatheringStateType::Idle => return "Idle".to_string(),
             GatheringStateType::MovingToResource => return "Moving to Resource".to_string(),
-            GatheringStateType::Gathering => return "Gathering Resources".to_string(),
-            GatheringStateType::ReturningToBase => return "Returning to Base".to_string(),
-            GatheringStateType::DeliveringResources => return "Delivering Resources".to_string(),
+            GatheringStateType::Gathering => {
+                let label = gatherer
+                    .and_then(|g| g.resource_type.as_ref())
+                    .map_or("Gathering Resources".to_string(), |rt| format!("Gathering {rt:?}"));
+                return label;
+            }
+            GatheringStateType::ReturningToBase | GatheringStateType::DeliveringResources => {
+                let label = gatherer
+                    .and_then(|g| g.resource_type.as_ref().map(|rt| (rt, g.carried_amount)))
+                    .map_or("Returning to Base".to_string(), |(rt, amt)| {
+                        format!("Returning {rt:?} ({amt:.0})")
+                    });
+                return label;
+            }
         }
     }
 
@@ -225,6 +222,42 @@ pub struct TooltipUI<'w, 's> {
     pub windows: Query<'w, 's, &'static Window>,
 }
 
+/// Builds the tooltip text and returns `(formatted_text, player_id)`, or `None` if no unit is hovered.
+fn build_tooltip_content(
+    hovered_entity: Option<Entity>,
+    unit_data: &UnitDataQueries,
+    unit_state: &UnitStateQueries,
+) -> Option<(String, u8)> {
+    let entity = hovered_entity?;
+    let (unit, health, _transform) = unit_data.units.get(entity).ok()?;
+
+    let entity_name = unit_display_name(entity, unit, unit_data);
+    let player_name = player_display_name(unit, unit_state);
+    let task = get_unit_task(entity, unit_data, unit_state);
+
+    let text = format!(
+        "{} ({})\nHealth: {:.0}/{:.0}\nTask: {}",
+        entity_name, player_name, health.current, health.max, task
+    );
+    Some((text, unit.player_id))
+}
+
+fn unit_display_name(entity: Entity, unit: &RTSUnit, unit_data: &UnitDataQueries) -> &'static str {
+    if let Ok(building) = unit_data.building_query.get(entity) {
+        return building.building_type.display_name();
+    }
+    unit.unit_type.as_ref().map_or("Unit", UnitType::display_name)
+}
+
+fn player_display_name(unit: &RTSUnit, unit_state: &UnitStateQueries) -> String {
+    if unit.player_id == 1 {
+        return "Player".to_string();
+    }
+    unit_state.player_teams.iter()
+        .find(|team| team.player_id == unit.player_id)
+        .map_or_else(|| format!("AI Player {}", unit.player_id), |team| format!("{:?}", team.team_type))
+}
+
 /// System to update tooltip content and position
 pub fn update_tooltip_system(
     hovered_unit: Res<HoveredUnit>,
@@ -239,121 +272,24 @@ pub fn update_tooltip_system(
         return;
     };
 
-    if let Some(hovered_entity) = hovered_unit.entity {
-        // Get unit info
-        if let Ok((unit, health, _transform)) = unit_data.units.get(hovered_entity) {
-            let task = get_unit_task(hovered_entity, &unit_data, &unit_state);
-
-            // Check if this is a building first
-            let entity_name = if let Ok(building) = unit_data.building_query.get(hovered_entity) {
-
-                match building.building_type {
-                    BuildingType::Queen => "Queen Chamber",
-                    BuildingType::Nursery => "Nursery",
-                    BuildingType::WarriorChamber => "Warrior Chamber",
-                }
-            } else {
-                // It's a unit, not a building
-                match unit.unit_type {
-                    // Classic units
-                    Some(UnitType::WorkerAnt) => "Worker Ant", // Primary gatherer (consolidated from all ant/fourmi types)
-                    Some(UnitType::BeetleKnight) => "Black Ox Beetle Knight",
-                    Some(UnitType::SpearMantis) => "Spear Mantis", // Primary mantis (consolidated from CommonMantis and LeafBugs)
-                    Some(UnitType::ScoutAnt) => "Cairns Birdwing", // (consolidated from Grasshoppers)
-                    Some(UnitType::DragonFly) => "Dragonfly 2",
-                    Some(UnitType::BatteringBeetle) => "Battering Black Ox Beetle",
-                    Some(UnitType::DefenderBug) => "Defender Bug", // (consolidated from Cockroaches)
-                    Some(UnitType::EliteSpider) => "Animated Elite Spider",
-
-                    // Beetles family
-                    Some(UnitType::StagBeetle) => "Stag Beetle",
-                    Some(UnitType::RhinoBeetle) => "Rhino Beetle",
-                    Some(UnitType::JewelBug) => "Jewel Bug",
-
-                    // Mantids family
-                    Some(UnitType::OrchidMantis) => "Orchid Mantis",
-
-                    // Isopods family
-                    Some(UnitType::Woodlouse) => "Woodlouse", // (consolidated from Pillbug)
-                    Some(UnitType::SandFleas) => "Sand Flea",
-
-                    // Small creatures family
-                    Some(UnitType::Aphids) => "Aphid",
-                    Some(UnitType::Mites) => "Mite", // (consolidated from Silverfish)
-                    Some(UnitType::Ticks) => "Tick",
-                    Some(UnitType::Fleas) => "Flea",
-                    Some(UnitType::Lice) => "Louse",
-
-                    // Butterflies family
-                    Some(UnitType::Moths) => "Moth",
-                    Some(UnitType::Caterpillars) => "Caterpillar",
-                    Some(UnitType::PeacockMoth) => "Peacock Moth",
-
-                    // Spiders family
-                    Some(UnitType::WidowSpider) => "Widow Spider",
-                    Some(UnitType::Tarantula) => "Tarantula",
-                    Some(UnitType::WolfSpider) => "Wolf Spider", // (consolidated from WolfSpiderVariant and DaddyLongLegs)
-
-                    // Flies family
-                    Some(UnitType::Firefly) => "Firefly",
-                    Some(UnitType::DragonFlies) => "Dragonfly", // (consolidated from Cicadas and Damselfly)
-                    Some(UnitType::Housefly) => "Common Housefly", // (consolidated from HouseflyVariant and Horsefly)
-
-                    // Bees family
-                    Some(UnitType::Hornets) => "Hornet", // (consolidated from Wasps and MurderHornet)
-                    Some(UnitType::Honeybees) => "Honeybee", // (consolidated from multiple bee types and AcidSpitter)
-
-                    // Termites family
-                    Some(UnitType::Earwigs) => "Earwig",
-                    Some(UnitType::TermiteWorker) => "Termite Worker",
-                    Some(UnitType::TermiteWarrior) => "Giant Termite Warrior",
-
-                    // Individual species
-                    Some(UnitType::StickBugs) => "Stick Bug",
-                    Some(UnitType::Scorpion) => "Scorpion", // (consolidated from ScorpionVariant)
-                    Some(UnitType::Stinkbug) => "Stink Bug", // (consolidated from StinkBeetle)
-
-                    _ => "Unit",
-                }
-            };
-
-            let player_name = if unit.player_id == 1 {
-                "Player".to_string()
-            } else {
-                // For AI players, look up their team name
-                let team_name = unit_state.player_teams.iter()
-                    .find(|team| team.player_id == unit.player_id)
-                    .map_or_else(|| format!("AI Player {}", unit.player_id),
-                                 |team| format!("{:?}", team.team_type));
-                team_name
-            };
-
-            // Update tooltip text
-            **tooltip_text = format!(
-                "{} ({})\nHealth: {:.0}/{:.0}\nTask: {}",
-                entity_name, player_name, health.current, health.max, task
-            );
-
-            // Position tooltip near cursor
-            if let Ok(window) = tooltip_ui.windows.get_single() {
-                if let Some(cursor_pos) = window.cursor_position() {
-                    tooltip_style.left = Val::Px(cursor_pos.x + 15.0);
-                    tooltip_style.top = Val::Px(cursor_pos.y + 15.0);
-                }
-            }
-
-            // Show tooltip with color based on player
-            tooltip_style.display = Display::Flex;
-            if unit.player_id == 1 {
-                // Player units: friendly blue-green tint
-                *tooltip_bg = BackgroundColor(Color::srgba(0.05, 0.15, 0.15, 0.95));
-            } else {
-                // AI units: neutral or enemy red tint
-                *tooltip_bg = BackgroundColor(Color::srgba(0.15, 0.05, 0.05, 0.95));
-            }
-        }
-    } else {
-        // Hide tooltip
+    let Some((text, player_id)) = build_tooltip_content(hovered_unit.entity, &unit_data, &unit_state) else {
         tooltip_style.display = Display::None;
+        return;
+    };
+
+    **tooltip_text = text;
+
+    if let Ok(window) = tooltip_ui.windows.get_single() {
+        if let Some(cursor_pos) = window.cursor_position() {
+            tooltip_style.left = Val::Px(cursor_pos.x + 15.0);
+            tooltip_style.top = Val::Px(cursor_pos.y + 15.0);
+        }
+    }
+
+    tooltip_style.display = Display::Flex;
+    if player_id == 1 {
+        *tooltip_bg = BackgroundColor(Color::srgba(0.05, 0.15, 0.15, 0.95));
+    } else {
+        *tooltip_bg = BackgroundColor(Color::srgba(0.15, 0.05, 0.05, 0.95));
     }
 }

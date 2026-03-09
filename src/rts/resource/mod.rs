@@ -7,6 +7,41 @@ use bevy::prelude::*;
 use self::events::*;
 use self::gathering::gathering_system;
 
+/// Derived state for a gathering unit. Recomputed every frame — never set directly.
+// Owned by: ResourceStatePlugin (update_gathering_states)
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct GatheringState {
+    pub state: GatheringStateType,
+    pub return_building: Option<Entity>,
+    pub gather_start_time: f32,
+    pub last_state_change: f32,
+}
+
+impl Default for GatheringState {
+    fn default() -> Self {
+        Self {
+            state: GatheringStateType::Idle,
+            return_building: None,
+            gather_start_time: 0.0,
+            last_state_change: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GatheringStateType {
+    /// Unit is idle, waiting for work assignment
+    Idle,
+    /// Moving to a resource to start gathering
+    MovingToResource,
+    /// Actively gathering from a resource
+    Gathering,
+    /// Moving back to base with gathered resources
+    ReturningToBase,
+    /// Delivering resources to a building
+    DeliveringResources,
+}
+
 pub struct ResourceStatePlugin;
 
 impl Plugin for ResourceStatePlugin {

@@ -1,9 +1,8 @@
 //! Worker goal generation — assigns idle AI workers to resource nodes.
 
 use bevy::prelude::*;
-use crate::core::components::{
-    GatheringState, GatheringStateType, ResourceGatherer, ResourceSource, RTSUnit, UnitType,
-};
+use crate::core::components::{ResourceGatherer, ResourceSource, RTSUnit, UnitType};
+use crate::rts::resource::{GatheringState, GatheringStateType};
 use crate::core::components::ResourceType;
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
