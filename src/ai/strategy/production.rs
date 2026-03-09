@@ -5,7 +5,7 @@ use crate::core::components::{Building, ProductionQueue, RTSUnit, UnitType};
 use crate::core::resources::Stockpiles;
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
-const MAX_AI_WORKERS: u32 = 5;
+const MAX_AI_WORKERS: u32 = 500;
 const BUILD_UNIT_PRIORITY: f32 = 5.0;
 
 /// Generates `BuildUnit` goals for AI players that can afford a new worker

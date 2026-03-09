@@ -27,6 +27,7 @@ pub fn worker_goal_system(
         let Some((resource_entity, resource_type, resource_pos)) =
             find_nearest_resource(transform.translation, &resources)
         else {
+            println!("Idle worker has no available resources to gather");
             continue;
         };
         goals.push(

@@ -60,7 +60,8 @@ fn production_queue_system(
         queue.progress -= queue.production_time;
         queue.queued.remove(0);
         let raw = tf.translation + Vec3::new(30.0, 0.0, 0.0);
-        let spawn_y = terrain.get_height(raw.x, raw.z) + 1.0;
-        EntityFactory::spawn_unit(&mut commands, &asset_server, unit_type, Vec3::new(raw.x, spawn_y, raw.z), building.player_id);
+        let passable = terrain.find_passable_near(Vec2::new(raw.x, raw.z));
+        let spawn_y = terrain.get_height(passable.x, passable.y) + 1.0;
+        EntityFactory::spawn_unit(&mut commands, &asset_server, unit_type, Vec3::new(passable.x, spawn_y, passable.y), building.player_id);
     }
 }
