@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use crate::core::components::*;
 use goals::types::GlobalGoalManager;
 use goals::execute_ai_goals_system;
-use strategy::{production_goal_system, worker_goal_system};
+use strategy::{combat_goal_system, production_goal_system, worker_goal_system};
 
 pub struct AIPlugin;
 
@@ -29,7 +29,7 @@ impl Plugin for AIPlugin {
             .add_systems(Startup, spawn_ai_units)
             .add_systems(
                 Update,
-                (worker_goal_system, production_goal_system, execute_ai_goals_system).chain(),
+                (worker_goal_system, production_goal_system, combat_goal_system, execute_ai_goals_system).chain(),
             );
     }
 }
@@ -60,7 +60,7 @@ fn spawn_ai_units(mut commands: Commands, asset_server: Res<AssetServer>) {
         Position { translation: Vec3::new(-170.0, 1.0, -300.0) },
         CollisionRadius { radius: 6.0 },
         SpatialGridPosition::default(),
-        RTSHealth { current: 100.0, max: 100.0 },
+        RTSHealth { current: 100.0, max: 100.0, ..RTSHealth::default() },
         ResourceGatherer {
             gather_rate: 5.0,
             capacity: 10.0,

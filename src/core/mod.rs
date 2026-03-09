@@ -7,5 +7,6 @@ pub mod logging_utils;
 pub mod resources;
 pub mod spatial_grid;
 pub mod time_controls;
+pub mod unit_stats;
 
 pub use collision::CollisionPlugin;

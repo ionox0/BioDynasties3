@@ -1,0 +1,43 @@
+
+  ---
+  What works today — no changes needed
+
+  - Core event interface is already compatible. The AI sends SetTargetResourceEvent + MovementTargetEvent exactly as unit_commands does. The gathering loop and movement system are already player/AI agnostic.
+  - player_id identification. RTSUnit.player_id is on all units. AI skips player_id == 1. No special "AI" component needed.
+  - Stockpiles is already player-agnostic. HashMap<u8, Stockpile> keyed by player_id works for AI players (2+) with zero changes.
+  - drop_off_building not needed. BioDynasties3 finds the nearest dropoff lazily — rust-game's ai_worker_dropoff_system is entirely redundant.
+  - MovementContext on MovementTargetEvent not needed. rust-game added it to feed DestinationReachedEvent, which BioDynasties3 replaced with distance-based detection. Drop it when porting the executor.
+
+  Issues to fix when porting AI goal executors
+
+  execute_optimize_resource_gathering_goal() has 3 direct component mutations (executors.rs:160–161, 204) — gatherer.target_resource and movement.target_position written directly. These must become
+  ClearTargetResourceEvent + ClearMovementEvent + SetTargetResourceEvent to comply with the ownership rules.
+
+  What needs to be added before AI logic can run
+
+  ┌────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────┐
+  │                           Missing piece                            │                        Why needed                        │
+  ├────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ UnitType helpers (is_worker(), is_military(), required_building()) │ Used throughout goal generators and strategy             │
+  ├────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ ProductionQueue component                                          │ BuildUnit goals write to it                              │
+  ├────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ GlobalGoalManager resource                                         │ Goal priority queue — pure data                          │
+  ├────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ Goal infrastructure (types, system, generator, executors)          │ Core AI loop                                             │
+  ├────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ Strategy layer (workers, economy, phases)                          │ Reads game state, produces goals; no component mutations │
+  ├────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ AI spawning in scene                                               │ Place AI units with player_id >= 2 at startup            │
+  └────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+
+  Recommended port order
+
+  1. UnitType helpers + ProductionQueue (unblocks everything)
+  2. Goal types + GlobalGoalManager
+  3. Goal execution system + AssignIdleWorkers executor (directly compatible, already event-driven)
+  4. Worker strategy (fix 3 direct mutations → events)
+  5. Economy/phase strategy
+  6. AI spawning
+  7. BuildUnit executor + production consumer
+  8. Combat goals (deferred — rust-game also has these as TODOs)

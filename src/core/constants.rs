@@ -96,6 +96,7 @@ pub mod collision {
     pub const NURSERY_COLLISION_RADIUS: f32 = 8.0;
     pub const WARRIOR_CHAMBER_COLLISION_RADIUS: f32 = 10.0;
     pub const QUEEN_COLLISION_RADIUS: f32 = 12.0;
+    pub const BEETLE_KNIGHT_COLLISION_RADIUS: f32 = 8.0;
     pub const DEFAULT_BUILDING_COLLISION_RADIUS: f32 = 8.0;
 }
 

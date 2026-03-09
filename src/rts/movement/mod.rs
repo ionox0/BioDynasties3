@@ -7,31 +7,38 @@
 //!   apply_movement_targets → clear_movement_targets → pathfinding_system → move_units → sync_position_component
 
 pub mod events;
+pub mod formation;
 pub mod formation_events;
 pub mod pathfinding;
 pub mod unit_commands;
+pub mod unstuck;
 
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::movement as mc;
 use crate::rts::resource::events::ClearMovementEvent;
 use crate::world::static_terrain::StaticTerrainHeights;
-use self::events::MovementTargetEvent;
+use self::events::{MovementTargetEvent, StopMovementEvent};
 use self::pathfinding::pathfinding_system;
+use self::unstuck::{add_stuck_detection, unstuck_system};
 
 pub struct MovementPlugin;
 
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<MovementTargetEvent>()
+            .add_event::<StopMovementEvent>()
             .add_systems(
                 Update,
                 (
+                    add_stuck_detection,
                     apply_movement_targets,
+                    stop_unit_movement,
                     clear_movement_targets,
                     pathfinding_system,
                     move_units,
                     sync_position_component,
+                    unstuck_system,
                 )
                     .chain(),
             );
@@ -54,6 +61,20 @@ fn apply_movement_targets(
         pf.path_index = 0;
         pf.last_pathfinding_failure = f32::NEG_INFINITY;
         pf.last_failed_target = None;
+    }
+}
+
+/// Clears movement when `StopMovementEvent` fires (sent by combat system).
+fn stop_unit_movement(
+    mut units: Query<(&mut Movement, &mut PathfindingState)>,
+    mut events: EventReader<StopMovementEvent>,
+) {
+    for ev in events.read() {
+        let Ok((mut mv, mut pf)) = units.get_mut(ev.entity) else { continue };
+        mv.target_position = None;
+        mv.current_velocity = Vec3::ZERO;
+        pf.path.clear();
+        pf.path_index = 0;
     }
 }
 

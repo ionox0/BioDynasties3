@@ -12,6 +12,7 @@
 
 use bevy::prelude::*;
 use crate::core::components::*;
+use crate::entities::entity_factory::EntityFactory;
 
 pub struct ProductionPlugin;
 
@@ -69,27 +70,6 @@ fn spawn_unit(
     unit_type: UnitType,
     base_pos: Vec3,
 ) {
-    // TODO: look up model path per UnitType when the full asset table exists
-    let model = "models/insects/fourmi.glb#Scene0";
     let pos = base_pos + Vec3::new(30.0, 1.0, 0.0);
-    let mut entity_cmds = commands.spawn((
-        SceneRoot(asset_server.load(model)),
-        Transform::from_translation(pos).with_scale(Vec3::splat(15.0)),
-        RTSUnit { player_id, unit_type: Some(unit_type.clone()) },
-        Movement { max_speed: 80.0, current_velocity: Vec3::ZERO, target_position: None },
-        PathfindingState::default(),
-        Position { translation: pos },
-        CollisionRadius { radius: 6.0 },
-        SpatialGridPosition::default(),
-        RTSHealth { current: 100.0, max: 100.0 },
-    ));
-    if unit_type.is_worker() {
-        entity_cmds.insert(ResourceGatherer {
-            gather_rate: 5.0,
-            capacity: 10.0,
-            carried_amount: 0.0,
-            resource_type: None,
-            target_resource: None,
-        });
-    }
+    EntityFactory::spawn_unit(commands, asset_server, unit_type, pos, player_id);
 }

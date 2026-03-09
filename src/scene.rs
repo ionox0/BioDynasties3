@@ -28,7 +28,7 @@ fn spawn_test_entities(mut commands: Commands, asset_server: Res<AssetServer>) {
         CollisionRadius { radius: 6.0 },
         SpatialGridPosition::default(),
         Selectable::default(),
-        RTSHealth { current: 100.0, max: 100.0 },
+        RTSHealth { current: 100.0, max: 100.0, ..RTSHealth::default() },
         ResourceGatherer {
             gather_rate: 5.0,
             capacity: 10.0,
