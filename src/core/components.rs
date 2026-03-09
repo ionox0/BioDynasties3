@@ -277,6 +277,45 @@ pub enum UnitType {
     Cicadas,           // Sound/support units
 }
 
+impl UnitType {
+    pub fn is_worker(&self) -> bool {
+        matches!(self, UnitType::WorkerAnt | UnitType::TermiteWorker)
+    }
+
+    /// The building type required to produce this unit.
+    pub fn required_building(&self) -> BuildingType {
+        match self {
+            UnitType::WorkerAnt | UnitType::TermiteWorker => BuildingType::Queen,
+            UnitType::BeetleKnight
+            | UnitType::SpearMantis
+            | UnitType::ScoutAnt
+            | UnitType::BatteringBeetle => BuildingType::WarriorChamber,
+            _ => BuildingType::Nursery,
+        }
+    }
+
+    /// Nectar cost to produce this unit.
+    pub fn build_cost_nectar(&self) -> f32 {
+        if self.is_worker() { 20.0 } else { 30.0 }
+    }
+}
+
+/// Pending unit production for a building.
+// queued items owned by: ProductionPlugin (apply_production_queue_events)
+// progress owned by: ProductionPlugin (production_queue_system)
+#[derive(Component, Debug, Clone)]
+pub struct ProductionQueue {
+    pub queued: Vec<UnitType>,
+    pub progress: f32,
+    pub production_time: f32,
+}
+
+impl Default for ProductionQueue {
+    fn default() -> Self {
+        Self { queued: Vec::new(), progress: 0.0, production_time: 5.0 }
+    }
+}
+
 // Owned by: SelectionPlugin (apply_selection_changes)
 #[derive(Component, Debug, Clone)]
 pub struct Selectable {

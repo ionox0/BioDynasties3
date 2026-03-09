@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+mod ai;
 mod core;
 mod debug;
 mod entities;
@@ -9,13 +10,14 @@ mod scene;
 mod ui;
 mod world;
 
+use ai::AIPlugin;
 use core::constants;
 use core::time_controls::TimeControlPlugin;
 use core::CollisionPlugin;
 use debug::DebugPlugin;
 use entities::LifecyclePlugin;
 use rendering::{AnimationPlugin, HoverEffectsPlugin};
-use rts::{CombatStatePlugin, ConstructionPlugin, MovementPlugin, PathfindingPlugin, ResourceStatePlugin, SelectionPlugin, UnitCommandsPlugin};
+use rts::{CombatStatePlugin, ConstructionPlugin, MovementPlugin, PathfindingPlugin, ProductionPlugin, ResourceStatePlugin, SelectionPlugin, UnitCommandsPlugin};
 use scene::ScenePlugin;
 use ui::UIPlugin;
 use world::{GridPlugin, SimpleMaterialPlugin, StaticTerrainPlugin};
@@ -53,5 +55,6 @@ fn main() {
             UnitCommandsPlugin,
             UIPlugin,
         ))
+        .add_plugins((ProductionPlugin, AIPlugin))
         .run();
 }
