@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use hashbrown::HashMap;
 
 // Owned by: MovementSystem (position sync)
 #[derive(Component, Debug, Clone)]
@@ -27,6 +28,7 @@ impl Default for Movement {
 }
 
 // Owned by: PathfindingPlugin (pathfinding_system) and MovementPlugin (path_index advancement)
+//   path_cache: pathfinding_system only
 #[derive(Component, Debug, Clone)]
 pub struct PathfindingState {
     /// World-space waypoints produced by A*.
@@ -37,6 +39,8 @@ pub struct PathfindingState {
     pub last_pathfinding_failure: f32,
     /// Target that triggered the last failure — cleared when a new target arrives.
     pub last_failed_target: Option<Vec3>,
+    /// Per-destination path cache. Key = goal grid coords. Value = (path, game-time stamp).
+    pub path_cache: HashMap<(i32, i32), (Vec<Vec3>, f32)>,
 }
 
 impl Default for PathfindingState {
@@ -46,6 +50,7 @@ impl Default for PathfindingState {
             path_index: 0,
             last_pathfinding_failure: f32::NEG_INFINITY,
             last_failed_target: None,
+            path_cache: HashMap::new(),
         }
     }
 }

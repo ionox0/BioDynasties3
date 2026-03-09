@@ -6,7 +6,8 @@
 
 use bevy::prelude::*;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
+use hashbrown::HashMap;
 use tracing::instrument;
 
 use crate::core::components::{Movement, PathfindingState, RTSUnit};
@@ -17,6 +18,11 @@ pub const GRID_RESOLUTION: f32 = 2.0;
 
 /// Retry cooldown in Bevy elapsed seconds after a pathfinding failure.
 const PATHFINDING_RETRY_COOLDOWN: f32 = 2.0;
+
+/// Seconds before a cached path expires.
+const CACHE_DURATION: f32 = 50.0;
+/// Maximum cached destinations per entity before evicting the oldest.
+const MAX_CACHE_SIZE: usize = 20;
 
 // ---------------------------------------------------------------------------
 // Grid resource
@@ -141,6 +147,70 @@ impl TerrainPathfindingGrid {
         }
         None
     }
+
+    /// Returns `false` if any sampled waypoint maps to a blocked grid cell.
+    fn is_cached_path_valid(&self, path: &[Vec3]) -> bool {
+        if path.is_empty() {
+            return false;
+        }
+        let last = path.len() - 1;
+        (0..path.len()).step_by(4)
+            .chain(std::iter::once(last))
+            .all(|i| {
+                self.world_to_grid(path[i])
+                    .map(|(gx, gz)| self.is_passable(gx, gz))
+                    .unwrap_or(false)
+            })
+    }
+
+    /// Look up or compute a path, caching the result by goal grid cell.
+    pub fn find_path_cached(
+        &self,
+        start: Vec3,
+        goal: Vec3,
+        terrain: &StaticTerrainHeights,
+        pf: &mut PathfindingState,
+        now: f32,
+    ) -> Option<Vec<Vec3>> {
+        let goal_grid = self.world_to_grid(goal)?;
+
+        if let Some((cached_path, stamp)) = pf.path_cache.get(&goal_grid) {
+            if now - stamp < CACHE_DURATION && self.is_cached_path_valid(cached_path) {
+                return Some(resume_from_cache(cached_path, start));
+            }
+            pf.path_cache.remove(&goal_grid);
+        }
+
+        let path = self.find_path(start, goal, terrain)?;
+
+        if pf.path_cache.len() >= MAX_CACHE_SIZE {
+            let oldest = pf.path_cache
+                .iter()
+                .min_by(|(_, (_, ta)), (_, (_, tb))| ta.partial_cmp(tb).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(k, _)| *k);
+            if let Some(k) = oldest {
+                pf.path_cache.remove(&k);
+            }
+        }
+
+        pf.path_cache.insert(goal_grid, (path.clone(), now));
+        Some(path)
+    }
+}
+
+/// Returns the cached path starting from the waypoint nearest to `current_pos`.
+fn resume_from_cache(cached_path: &[Vec3], current_pos: Vec3) -> Vec<Vec3> {
+    let start = cached_path
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            current_pos.distance_squared(**a)
+                .partial_cmp(&current_pos.distance_squared(**b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    cached_path[start..].to_vec()
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +355,7 @@ pub fn pathfinding_system(
             }
         };
 
-        match grid.find_path(transform.translation, target, &terrain) {
+        match grid.find_path_cached(transform.translation, target, &terrain, &mut pf, now) {
             Some(path) if !path.is_empty() => {
                 pf.path = path;
                 pf.path_index = 0;
