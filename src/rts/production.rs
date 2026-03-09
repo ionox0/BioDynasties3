@@ -13,6 +13,7 @@
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::entities::entity_factory::EntityFactory;
+use crate::world::static_terrain::StaticTerrainHeights;
 
 pub struct ProductionPlugin;
 
@@ -50,26 +51,16 @@ fn production_queue_system(
     mut buildings: Query<(&Building, &Transform, &mut ProductionQueue)>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    terrain: Res<StaticTerrainHeights>,
 ) {
     for (building, tf, mut queue) in buildings.iter_mut() {
         let Some(unit_type) = queue.queued.first().cloned() else { continue };
         queue.progress += time.delta_secs();
-        if queue.progress < queue.production_time {
-            continue;
-        }
+        if queue.progress < queue.production_time { continue; }
         queue.progress -= queue.production_time;
         queue.queued.remove(0);
-        spawn_unit(&mut commands, &asset_server, building.player_id, unit_type, tf.translation);
+        let raw = tf.translation + Vec3::new(30.0, 0.0, 0.0);
+        let spawn_y = terrain.get_height(raw.x, raw.z) + 1.0;
+        EntityFactory::spawn_unit(&mut commands, &asset_server, unit_type, Vec3::new(raw.x, spawn_y, raw.z), building.player_id);
     }
-}
-
-fn spawn_unit(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    player_id: u8,
-    unit_type: UnitType,
-    base_pos: Vec3,
-) {
-    let pos = base_pos + Vec3::new(30.0, 1.0, 0.0);
-    EntityFactory::spawn_unit(commands, asset_server, unit_type, pos, player_id);
 }

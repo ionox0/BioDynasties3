@@ -20,33 +20,33 @@
 //!                    │
 //!                    ▼
 //!          ┌──────────────────┐ ◄─────────────────────────────────────────┐
-//!          │ MovingToResource │                                            │
+//!          │ MovingToResource │                                           │
 //!          └────────┬─────────┘                                           │
-//!                   │ movement cleared on arrival                          │
-//!                   ▼                                                      │
-//!            ┌────────────┐                                                │
-//!            │  Gathering │  carried_amount += gather_rate * dt            │
+//!                   │ movement cleared on arrival                         │
+//!                   ▼                                                     │
+//!            ┌────────────┐                                               │
+//!            │  Gathering │  carried_amount += gather_rate * dt           │
 //!            └──────┬─────┘  resource.amount  -= amount                   │
-//!                   │                                                      │
+//!                   │                                                     │
 //!           ┌───────┴────────────┐                                        │
-//!     at capacity             depleted                                     │
-//!           │                    └──► ClearTargetResourceEvent             │
-//!           │                                  │                           │
-//!           │                                  ▼                           │
-//!           │                              ┌──────┐                        │
-//!           │                              │ Idle │                        │
-//!           │                              └──────┘                        │
-//!           │ MovementTargetEvent(building_pos)                            │
-//!           ▼                                                              │
-//!  ┌─────────────────┐                                                     │
-//!  │ ReturningToBase │                                                     │
-//!  └────────┬────────┘                                                     │
-//!           │ movement cleared on arrival                                  │
-//!           ▼                                                              │
+//!     at capacity             depleted                                    │
+//!           │                    └──► ClearTargetResourceEvent            │
+//!           │                                  │                          │
+//!           │                                  ▼                          │
+//!           │                              ┌──────┐                       │
+//!           │                              │ Idle │                       │
+//!           │                              └──────┘                       │
+//!           │ MovementTargetEvent(building_pos)                           │
+//!           ▼                                                             │
+//!  ┌─────────────────┐                                                    │
+//!  │ ReturningToBase │                                                    │
+//!  └────────┬────────┘                                                    │
+//!           │ movement cleared on arrival                                 │
+//!           ▼                                                             │
 //!  ┌──────────────────────┐                                               │
 //!  │  DeliveringResources │  Stockpiles += carried_amount                 │
-//!  └──────────┬───────────┘  ResetCargoEvent  (cargo → 0)                │
-//!             │              target_resource preserved                     │
+//!  └──────────┬───────────┘  ResetCargoEvent  (cargo → 0)                 │
+//!             │              target_resource preserved                    │
 //!             │ MovementTargetEvent(resource_pos)                         │
 //!             └───────────────────────────────────────────────────────────┘
 //! ```

@@ -17,9 +17,14 @@ pub mod strategy;
 
 use bevy::prelude::*;
 use crate::core::components::*;
+use crate::core::resources::{Stockpile, Stockpiles};
+use crate::world::static_terrain::StaticTerrainHeights;
 use goals::types::GlobalGoalManager;
 use goals::execute_ai_goals_system;
 use strategy::{combat_goal_system, production_goal_system, worker_goal_system};
+
+/// East edge: 85 % of MAP_BOUNDARY — AI player 2 spawn.
+const AI_SPAWN: Vec3 = Vec3::new(2550.0, 0.0, 0.0);
 
 pub struct AIPlugin;
 
@@ -34,11 +39,22 @@ impl Plugin for AIPlugin {
     }
 }
 
-/// Spawns the initial AI base and one worker ant (player_id = 2).
-fn spawn_ai_units(mut commands: Commands, asset_server: Res<AssetServer>) {
+/// Spawns the initial AI base and one worker ant (player_id = 2) at the east edge.
+fn spawn_ai_units(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut stockpiles: ResMut<Stockpiles>,
+    terrain: Res<StaticTerrainHeights>,
+) {
+    *stockpiles.get_or_insert_mut(2) = Stockpile::starting();
+
+    let passable = terrain.find_passable_near(Vec2::new(AI_SPAWN.x, AI_SPAWN.z));
+    let ground_y = terrain.get_height(passable.x, passable.y);
+    let base_pos = Vec3::new(passable.x, ground_y, passable.y);
+
     commands.spawn((
         SceneRoot(asset_server.load("models/objects/anthill.glb#Scene0")),
-        Transform::from_xyz(-200.0, 0.0, -300.0).with_scale(Vec3::splat(20.0)),
+        Transform::from_translation(base_pos).with_scale(Vec3::splat(20.0)),
         Building {
             player_id: 2,
             building_type: BuildingType::Queen,
@@ -46,18 +62,21 @@ fn spawn_ai_units(mut commands: Commands, asset_server: Res<AssetServer>) {
             max_construction: 100.0,
             is_complete: true,
         },
-        Position { translation: Vec3::new(-200.0, 0.0, -300.0) },
+        Position { translation: base_pos },
         CollisionRadius { radius: 20.0 },
+        Selectable { is_selected: false, selection_radius: 10.0 },
         ProductionQueue::default(),
     ));
 
+    let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
+    let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
     commands.spawn((
         SceneRoot(asset_server.load("models/insects/fourmi.glb#Scene0")),
-        Transform::from_xyz(-170.0, 1.0, -300.0).with_scale(Vec3::splat(15.0)),
+        Transform::from_translation(worker_pos).with_scale(Vec3::splat(15.0)),
         RTSUnit { player_id: 2, unit_type: Some(UnitType::WorkerAnt) },
         Movement { max_speed: 80.0, current_velocity: Vec3::ZERO, target_position: None },
         PathfindingState::default(),
-        Position { translation: Vec3::new(-170.0, 1.0, -300.0) },
+        Position { translation: worker_pos },
         CollisionRadius { radius: 6.0 },
         SpatialGridPosition::default(),
         RTSHealth { current: 100.0, max: 100.0, ..RTSHealth::default() },

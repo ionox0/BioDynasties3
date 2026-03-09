@@ -1,13 +1,34 @@
 //! Combat systems.
 //!
-//! Owns: `Combat` (target, is_attacking, last_attack_time),
-//!       `RTSHealth` (current, last_damage_time), `Dying` (on death).
+//! ## Component ownership
+//!
+//! | Component            | Owner                       |
+//! |----------------------|-----------------------------|
+//! | `Combat.target`      | `combat_target_handler`     |
+//! | `Combat.is_attacking`| `combat_execution_system`   |
+//! | `RTSHealth`          | `damage_resolution_system`  |
+//! | `Dying`              | `damage_resolution_system`  |
+//! | `CombatState`        | `update_combat_states`      |
+//!
+//! ## Unit combat state machine
+//!
+//! ```text
+//!            ┌──────── target dies / CombatStopEvent ──────────────────────┐
+//!            │                                                             │
+//!            ▼                                                             │
+//!       ╔════════╗   enemy enters   ┌────────────────────┐  in range  ┌──────────┐
+//!       ║  Idle  ║   VISION_RANGE   │  MovingToAttack /  │──────────▶ │ InCombat │──▶ DamageEvent
+//!       ╚════════╝─────────────────▶│  MovingToCombat    │            │          │    per cooldown
+//!                                   └────────────────────┘            └──────────┘
+//!                                            ▲                              │
+//!                                            └──────── target leaves range ─┘
+//! ```
 //!
 //! ## System order each Update frame
 //!
 //! ```text
 //! combat_target_handler    (CombatTargetEvent → Combat.target)
-//! combat_stop_handler      (CombatStopEvent → clear Combat)
+//! combat_stop_handler      (CombatStopEvent   → clear Combat)
 //! target_management_system (validate + auto-acquire targets)
 //! combat_execution_system  (attack + MovementTargetEvent / StopMovementEvent)
 //! damage_resolution_system (DamageEvent → RTSHealth, DeathEvent)
@@ -23,8 +44,16 @@ use crate::core::spatial_grid::IncrementalSpatialGrid;
 use crate::rts::movement::events::{MovementTargetEvent, StopMovementEvent};
 use self::events::{CombatStopEvent, CombatTargetEvent, DamageEvent, DeathEvent};
 
-type AliveQuery<'w, 's> = Query<'w, 's, (Entity, &'static Transform, &'static RTSUnit), (With<RTSHealth>, Without<Dying>)>;
-type TargetQuery<'w, 's> = Query<'w, 's, (&'static Transform, &'static CollisionRadius), (With<RTSHealth>, Without<Dying>)>;
+type AliveQuery<'w, 's> = Query<
+    'w, 's,
+    (Entity, &'static Transform, &'static RTSUnit),
+    (With<RTSHealth>, Without<Dying>),
+>;
+type TargetQuery<'w, 's> = Query<
+    'w, 's,
+    (&'static Transform, &'static CollisionRadius),
+    (With<RTSHealth>, Without<Dying>),
+>;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -55,13 +84,8 @@ impl TargetGrid {
         self.0
             .query_nearby_with_keys(position)
             .into_iter()
-            .filter_map(|(entity, (entity_pos, player_id))| {
-                if position.distance(*entity_pos) <= range {
-                    Some((entity, *entity_pos, *player_id))
-                } else {
-                    None
-                }
-            })
+            .filter(|(_, (pos, _))| position.distance(*pos) <= range)
+            .map(|(entity, (pos, pid))| (entity, *pos, *pid))
             .collect()
     }
 }
@@ -93,7 +117,7 @@ impl Plugin for CombatPlugin {
     }
 }
 
-// ─── Systems ─────────────────────────────────────────────────────────────────
+// ─── Event handlers ──────────────────────────────────────────────────────────
 
 /// Handles `CombatTargetEvent` — assigns `Combat.target` and optionally triggers movement.
 fn combat_target_handler(
@@ -132,7 +156,9 @@ fn combat_stop_handler(
     }
 }
 
-/// Validates existing targets and auto-acquires new ones from the spatial grid.
+// ─── Target management ───────────────────────────────────────────────────────
+
+/// Refreshes the spatial grid, validates existing targets, and auto-acquires new ones.
 fn target_management_system(
     mut combat_q: Query<(Entity, &mut Combat, &Transform, &RTSUnit)>,
     alive_q: AliveQuery,
@@ -146,7 +172,7 @@ fn target_management_system(
         target_grid.0.update_item(entity, transform.translation, (transform.translation, unit.player_id));
     }
 
-    for (_entity, mut combat, transform, unit) in combat_q.iter_mut() {
+    for (_, mut combat, transform, unit) in combat_q.iter_mut() {
         if let Some(target) = combat.target {
             if alive_q.get(target).is_err() {
                 combat.target = None;
@@ -156,17 +182,19 @@ fn target_management_system(
             continue;
         }
         let nearby = target_grid.query_nearby(transform.translation, cc::VISION_RANGE);
-        let closest = nearby
+        combat.target = nearby
             .into_iter()
             .filter(|(_, _, pid)| *pid != unit.player_id)
             .min_by(|(_, pa, _), (_, pb, _)| {
                 transform.translation.distance(*pa)
                     .partial_cmp(&transform.translation.distance(*pb))
                     .unwrap_or(std::cmp::Ordering::Equal)
-            });
-        combat.target = closest.map(|(e, _, _)| e);
+            })
+            .map(|(e, _, _)| e);
     }
 }
+
+// ─── Execution & damage ──────────────────────────────────────────────────────
 
 /// Moves units toward their target and fires `DamageEvent` when in range.
 fn combat_execution_system(
@@ -195,34 +223,26 @@ fn combat_execution_system(
             continue;
         };
 
-        let center_dist = atf.translation.distance(ttf.translation);
-        let edge_dist = center_dist - acol.radius - tcol.radius;
-        let effective_range = combat.attack_range * cc::ATTACK_RANGE_MARGIN;
+        let edge_dist = atf.translation.distance(ttf.translation) - acol.radius - tcol.radius;
 
-        if edge_dist > effective_range {
+        if edge_dist > combat.attack_range * cc::ATTACK_RANGE_MARGIN {
             let dir = (ttf.translation - atf.translation).normalize();
             let dest = ttf.translation - dir * (combat.attack_range * cc::TARGET_POSITION_RATIO);
-            let should_move = unit.player_id != 1 || edge_dist < combat.attack_range * 2.0;
-            if should_move {
+            if unit.player_id != 1 || edge_dist < combat.attack_range * 2.0 {
                 move_events.send(MovementTargetEvent { entity: attacker, target_position: dest });
             }
             combat.is_attacking = false;
         } else {
-            if edge_dist <= combat.attack_range {
-                stop_events.send(StopMovementEvent { entity: attacker });
-            }
-            if edge_dist <= combat.attack_range && now - combat.last_attack_time >= combat.attack_cooldown {
+            // In effective range: stop and attack.
+            stop_events.send(StopMovementEvent { entity: attacker });
+            if now - combat.last_attack_time >= combat.attack_cooldown {
                 combat.last_attack_time = now;
                 combat.is_attacking = true;
-                let damage_type = match combat.attack_type {
-                    AttackType::Melee => DamageType::Physical,
-                    AttackType::Siege => DamageType::Siege,
-                };
                 damage_events.send(DamageEvent {
                     attacker,
                     target,
                     damage: combat.attack_damage,
-                    damage_type,
+                    damage_type: damage_type_for(&combat.attack_type),
                 });
             }
         }
@@ -250,6 +270,8 @@ fn damage_resolution_system(
     }
 }
 
+// ─── Regeneration & death ────────────────────────────────────────────────────
+
 /// Regenerates health for units not in active combat after a delay.
 fn health_regen_system(
     mut health_q: Query<(&mut RTSHealth, Option<&CombatState>)>,
@@ -257,16 +279,11 @@ fn health_regen_system(
 ) {
     let now = time.elapsed_secs();
     for (mut health, combat_state) in health_q.iter_mut() {
-        if let Some(cs) = combat_state {
-            if matches!(
-                cs.state,
-                CombatStateType::InCombat
-                    | CombatStateType::MovingToAttack
-                    | CombatStateType::MovingToCombat
-            ) {
-                continue;
-            }
-        }
+        let in_active_combat = combat_state.is_some_and(|cs| matches!(
+            cs.state,
+            CombatStateType::InCombat | CombatStateType::MovingToAttack | CombatStateType::MovingToCombat
+        ));
+        if in_active_combat { continue; }
         if health.current < health.max
             && now - health.last_damage_time >= cc::REGEN_DELAY
             && health.regeneration_rate > 0.0
@@ -295,6 +312,15 @@ fn death_system(
     }
 }
 
+// ─── Damage math ─────────────────────────────────────────────────────────────
+
+fn damage_type_for(attack_type: &AttackType) -> DamageType {
+    match attack_type {
+        AttackType::Melee => DamageType::Physical,
+        AttackType::Siege => DamageType::Siege,
+    }
+}
+
 fn apply_armor(base: f32, armor: f32, damage_type: &DamageType) -> f32 {
     let reduction = match damage_type {
         DamageType::Physical => armor / (armor + 100.0),
@@ -303,7 +329,8 @@ fn apply_armor(base: f32, armor: f32, damage_type: &DamageType) -> f32 {
     base * (1.0 - reduction)
 }
 
-// Re-export for CombatStatePlugin usage in mod.rs
+// ─── Combat state tracking (CombatStatePlugin) ───────────────────────────────
+
 pub struct CombatStatePlugin;
 
 impl Plugin for CombatStatePlugin {
@@ -350,8 +377,7 @@ fn derive_combat_state(
 ) -> CombatStateType {
     let Some(target) = combat.target else { return CombatStateType::Idle };
     let Ok(target_tf) = targets.get(target) else { return CombatStateType::Idle };
-    let dist = transform.translation.distance(target_tf.translation);
-    if dist <= combat.attack_range {
+    if transform.translation.distance(target_tf.translation) <= combat.attack_range {
         return CombatStateType::InCombat;
     }
     if movement.is_some_and(|m| m.target_position.is_some()) {
@@ -366,19 +392,8 @@ fn update_target_refs(
     combat: &Combat,
     targets: &Query<&Transform, (With<RTSHealth>, Without<Dying>)>,
 ) {
-    match combat.target {
-        Some(target) => {
-            if let Ok(tf) = targets.get(target) {
-                state.target_entity = Some(target);
-                state.target_position = Some(tf.translation);
-            } else {
-                state.target_entity = None;
-                state.target_position = None;
-            }
-        }
-        None => {
-            state.target_entity = None;
-            state.target_position = None;
-        }
-    }
+    let resolved = combat.target
+        .and_then(|t| targets.get(t).ok().map(|tf| (t, tf.translation)));
+    state.target_entity = resolved.map(|(e, _)| e);
+    state.target_position = resolved.map(|(_, p)| p);
 }

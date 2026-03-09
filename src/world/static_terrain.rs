@@ -64,6 +64,29 @@ impl StaticTerrainHeights {
         self.get_height(x, z) <= ROCKY_TERRAIN_HEIGHT_THRESHOLD
     }
 
+    /// Searches outward from `origin` in 50-unit rings until a passable cell is found.
+    /// Returns the original point if it is already passable.
+    pub fn find_passable_near(&self, origin: Vec2) -> Vec2 {
+        const STEP: f32 = 50.0;
+        const MAX_RING: i32 = 40; // up to 2 000 units away
+        if self.is_passable(origin.x, origin.y) {
+            return origin;
+        }
+        for ring in 1..=MAX_RING {
+            for dx in -ring..=ring {
+                for dz in -ring..=ring {
+                    if dx.abs() != ring && dz.abs() != ring { continue; }
+                    let x = origin.x + dx as f32 * STEP;
+                    let z = origin.y + dz as f32 * STEP;
+                    if self.is_passable(x, z) {
+                        return Vec2::new(x, z);
+                    }
+                }
+            }
+        }
+        origin
+    }
+
     /// Get detailed terrain information including passability
     pub fn get_terrain_info(&self, x: f32, z: f32) -> TerrainInfo {
         let height = self.get_height(x, z);

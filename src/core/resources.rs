@@ -36,6 +36,17 @@ pub struct Stockpile {
 }
 
 impl Stockpile {
+    /// Returns a stockpile pre-filled with standard starting resources.
+    pub fn starting() -> Self {
+        use crate::core::constants::resources as rc;
+        Self {
+            nectar: rc::STARTING_NECTAR,
+            chitin: rc::STARTING_CHITIN,
+            minerals: rc::STARTING_MINERALS,
+            pheromones: rc::STARTING_PHEROMONES,
+        }
+    }
+
     pub fn add(&mut self, resource_type: &ResourceType, amount: f32) {
         match resource_type {
             ResourceType::Nectar => self.nectar += amount,

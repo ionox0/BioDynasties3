@@ -1,6 +1,6 @@
 //! UI components and systems.
 
-pub mod building_panel;
+pub mod action_panel;
 pub mod health_ui;
 pub mod icons;
 pub mod placement;
@@ -8,7 +8,7 @@ pub mod resource_display;
 pub mod tooltip;
 
 use bevy::prelude::*;
-use building_panel::BuildingPanelPlugin;
+use action_panel::ActionPanelPlugin;
 use health_ui::HealthUIPlugin;
 use placement::PlacementPlugin;
 use resource_display::ResourceDisplayPlugin;
@@ -23,7 +23,7 @@ impl Plugin for UIPlugin {
             .add_plugins((
                 HealthUIPlugin,
                 ResourceDisplayPlugin,
-                BuildingPanelPlugin,
+                ActionPanelPlugin,
                 PlacementPlugin,
             ))
             .add_systems(Startup, (setup_tooltip, icons::load_ui_icons))
