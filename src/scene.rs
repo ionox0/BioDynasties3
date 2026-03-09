@@ -114,22 +114,12 @@ fn lcg_next(seed: &mut u64) -> f32 {
     (*seed >> 33) as f32 / i32::MAX as f32
 }
 
-fn resource_type_for_index(i: usize) -> ResourceType {
-    match i % 4 {
-        0 => ResourceType::Nectar,
-        1 => ResourceType::Chitin,
-        2 => ResourceType::Minerals,
-        _ => ResourceType::Pheromones,
-    }
+fn resource_type_for_index(_i: usize) -> ResourceType {
+    ResourceType::Nectar
 }
 
-fn resource_amount(rt: &ResourceType) -> f32 {
-    match rt {
-        ResourceType::Nectar => 800.0,
-        ResourceType::Chitin => 400.0,
-        ResourceType::Minerals => 500.0,
-        ResourceType::Pheromones => 350.0,
-    }
+fn resource_amount(_rt: &ResourceType) -> f32 {
+    800.0
 }
 
 // ─── Camera setup & input ────────────────────────────────────────────────────

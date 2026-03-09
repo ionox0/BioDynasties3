@@ -179,7 +179,7 @@ struct SearchResult {
     closed: HashMap<(i32, i32), Node>,
 }
 
-const MAX_NODES: usize = 50_000;
+const MAX_NODES: usize = 500_000;
 
 fn init_search(grid: &TerrainPathfindingGrid, start: Vec3, goal: Vec3) -> Option<SearchState> {
     let sg = grid.world_to_grid(start)?;
@@ -266,11 +266,11 @@ pub fn pathfinding_system(
     let Some(grid) = grid else { return };
     let now = time.elapsed_secs();
 
-    for (_entity, transform, movement, mut pf) in units.iter_mut() {
+    units.par_iter_mut().for_each(|(_entity, transform, movement, mut pf)| {
         if !unit_needs_path(movement, &pf) || !should_retry(now, &pf) {
-            continue;
+            return;
         }
-        let Some(raw_target) = movement.target_position else { continue };
+        let Some(raw_target) = movement.target_position else { return };
 
         let target = if grid.world_to_grid(raw_target).map(|g| grid.is_passable(g.0, g.1)).unwrap_or(false) {
             raw_target
@@ -280,7 +280,7 @@ pub fn pathfinding_system(
                 None => {
                     pf.last_pathfinding_failure = now;
                     pf.last_failed_target = Some(raw_target);
-                    continue;
+                    return;
                 }
             }
         };
@@ -295,7 +295,7 @@ pub fn pathfinding_system(
                 pf.last_failed_target = Some(raw_target);
             }
         }
-    }
+    });
 }
 
 // ---------------------------------------------------------------------------
