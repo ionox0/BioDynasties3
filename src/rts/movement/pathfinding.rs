@@ -166,40 +166,7 @@ impl TerrainPathfindingGrid {
                     .unwrap_or(false)
             })
     }
-
-    /// Look up or compute a path, caching the result by goal grid cell.
-    pub fn find_path_cached(
-        &self,
-        start: Vec3,
-        goal: Vec3,
-        terrain: &StaticTerrainHeights,
-        pf: &mut PathfindingState,
-        now: f32,
-    ) -> Option<Vec<Vec3>> {
-        let goal_grid = self.world_to_grid(goal)?;
-
-        if let Some((cached_path, stamp)) = pf.path_cache.get(&goal_grid) {
-            if now - stamp < CACHE_DURATION && self.is_cached_path_valid(cached_path) {
-                return Some(resume_from_cache(cached_path, start));
-            }
-            pf.path_cache.remove(&goal_grid);
-        }
-
-        let path = self.find_path(start, goal, terrain)?;
-
-        if pf.path_cache.len() >= MAX_CACHE_SIZE {
-            let oldest = pf.path_cache
-                .iter()
-                .min_by(|(_, (_, ta)), (_, (_, tb))| ta.partial_cmp(tb).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(k, _)| *k);
-            if let Some(k) = oldest {
-                pf.path_cache.remove(&k);
-            }
-        }
-
-        pf.path_cache.insert(goal_grid, (path.clone(), now));
-        Some(path)
-    }
+    
 }
 
 /// Returns the cached path starting from the waypoint nearest to `current_pos`.
