@@ -1,12 +1,16 @@
 //! Grid-based A* pathfinding for RTS terrain navigation.
 //!
 //! `TerrainPathfindingGrid` is built once at startup from terrain passability data.
-//! `pathfinding_system` (pub, called from MovementPlugin) fills `PathfindingState.path`
-//! each frame for ground units that need a new route.
+//! `request_paths` (pub, registered by MovementPlugin) spawns async A* tasks for units
+//! that need a route. `poll_path_tasks` (pub, registered by MovementPlugin) collects
+//! completed tasks and writes results back to `PathfindingState`.
 
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
+use bevy::tasks::futures_lite::future;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::sync::Arc;
 use hashbrown::HashMap;
 use tracing::instrument;
 
@@ -35,7 +39,7 @@ enum CellState {
 }
 
 /// A* grid built from static terrain data. Inserted as a `Resource` at startup.
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct TerrainPathfindingGrid {
     cells: Vec<Vec<CellState>>,
     width: usize,
@@ -315,7 +319,30 @@ fn trace_grid_path(result: SearchResult) -> Vec<(i32, i32)> {
 }
 
 // ---------------------------------------------------------------------------
-// Pathfinding system (pub — registered by MovementPlugin, runs before move_units)
+// Arc-wrapped resources for sharing across async tasks
+// ---------------------------------------------------------------------------
+
+/// Holds Arc-wrapped grid + terrain so async tasks can clone a reference cheaply.
+#[derive(Resource, Clone)]
+pub struct PathfindingGridResource {
+    pub grid: Arc<TerrainPathfindingGrid>,
+    terrain: Arc<StaticTerrainHeights>,
+}
+
+// ---------------------------------------------------------------------------
+// PathTask component — in-flight async A* request
+// ---------------------------------------------------------------------------
+
+/// Attached to a unit while an async A* search is in progress.
+/// Removed (via Commands) when the task completes or the target changes.
+#[derive(Component)]
+pub struct PathTask {
+    task: Task<Option<Vec<Vec3>>>,
+    raw_target: Vec3,
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
 // ---------------------------------------------------------------------------
 
 fn unit_needs_path(mv: &Movement, pf: &PathfindingState) -> bool {
@@ -326,37 +353,115 @@ fn should_retry(now: f32, pf: &PathfindingState) -> bool {
     now - pf.last_pathfinding_failure >= PATHFINDING_RETRY_COOLDOWN
 }
 
-/// Computes A* paths for ground units that need one. Registered by `MovementPlugin`.
-pub fn pathfinding_system(
-    mut units: Query<(Entity, &Transform, &Movement, &mut PathfindingState), With<RTSUnit>>,
-    grid: Option<Res<TerrainPathfindingGrid>>,
-    terrain: Res<StaticTerrainHeights>,
+fn resolve_target(raw: Vec3, grid: &TerrainPathfindingGrid, terrain: &StaticTerrainHeights) -> Option<Vec3> {
+    if grid.world_to_grid(raw).map(|g| grid.is_passable(g.0, g.1)).unwrap_or(false) {
+        Some(raw)
+    } else {
+        grid.find_nearest_passable(raw, terrain)
+    }
+}
+
+fn try_cached_path(
+    grid: &TerrainPathfindingGrid,
+    pf: &mut PathfindingState,
+    raw_target: Vec3,
+    current_pos: Vec3,
+    now: f32,
+) -> Option<Vec<Vec3>> {
+    let goal_grid = grid.world_to_grid(raw_target)?;
+    let (cached, stamp) = pf.path_cache.get(&goal_grid)?;
+    if now - stamp >= CACHE_DURATION || !grid.is_cached_path_valid(cached) {
+        pf.path_cache.remove(&goal_grid);
+        return None;
+    }
+    let path = resume_from_cache(cached, current_pos);
+    if path.is_empty() { None } else { Some(path) }
+}
+
+fn update_path_cache(pf: &mut PathfindingState, goal_grid: (i32, i32), path: &[Vec3], now: f32) {
+    if pf.path_cache.len() >= MAX_CACHE_SIZE {
+        let oldest = pf.path_cache
+            .iter()
+            .min_by(|(_, (_, ta)), (_, (_, tb))| ta.partial_cmp(tb).unwrap_or(Ordering::Equal))
+            .map(|(k, _)| *k);
+        if let Some(k) = oldest {
+            pf.path_cache.remove(&k);
+        }
+    }
+    pf.path_cache.insert(goal_grid, (path.to_vec(), now));
+}
+
+// ---------------------------------------------------------------------------
+// Systems (pub — registered by MovementPlugin)
+// ---------------------------------------------------------------------------
+
+/// Checks cache, then spawns an async A* task for each unit that needs a path.
+/// Only runs for units without an in-flight `PathTask`.
+pub fn request_paths(
+    mut commands: Commands,
+    mut units: Query<
+        (Entity, &Transform, &Movement, &mut PathfindingState),
+        (With<RTSUnit>, Without<PathTask>),
+    >,
+    grid_res: Option<Res<PathfindingGridResource>>,
     time: Res<Time>,
 ) {
-    let Some(grid) = grid else { return };
+    let Some(grid_res) = grid_res else { return };
+    let now = time.elapsed_secs();
+    let task_pool = AsyncComputeTaskPool::get();
+
+    for (entity, transform, movement, mut pf) in units.iter_mut() {
+        if !unit_needs_path(movement, &pf) || !should_retry(now, &pf) {
+            continue;
+        }
+        let Some(raw_target) = movement.target_position else { continue };
+
+        // Cache hit → apply immediately, no async overhead.
+        if let Some(path) = try_cached_path(&grid_res.grid, &mut pf, raw_target, transform.translation, now) {
+            pf.path = path;
+            pf.path_index = 0;
+            continue;
+        }
+
+        // Cache miss → spawn background A* task.
+        let grid = grid_res.grid.clone();
+        let terrain = grid_res.terrain.clone();
+        let start = transform.translation;
+        let task = task_pool.spawn(async move {
+            let target = resolve_target(raw_target, &grid, &terrain)?;
+            grid.find_path(start, target, &terrain)
+        });
+        commands.entity(entity).insert(PathTask { task, raw_target });
+    }
+}
+
+/// Polls in-flight `PathTask`s and writes completed results to `PathfindingState`.
+pub fn poll_path_tasks(
+    mut commands: Commands,
+    mut units: Query<(Entity, &Movement, &mut PathfindingState, &mut PathTask)>,
+    grid_res: Option<Res<PathfindingGridResource>>,
+    time: Res<Time>,
+) {
     let now = time.elapsed_secs();
 
-    units.par_iter_mut().for_each(|(_entity, transform, movement, mut pf)| {
-        if !unit_needs_path(movement, &pf) || !should_retry(now, &pf) {
-            return;
+    for (entity, movement, mut pf, mut path_task) in units.iter_mut() {
+        let Some(result) = block_on(future::poll_once(&mut path_task.task)) else { continue };
+
+        let raw_target = path_task.raw_target;
+        commands.entity(entity).remove::<PathTask>();
+
+        // Discard stale result if the target changed while the task was in flight.
+        if movement.target_position != Some(raw_target) {
+            continue;
         }
-        let Some(raw_target) = movement.target_position else { return };
 
-        let target = if grid.world_to_grid(raw_target).map(|g| grid.is_passable(g.0, g.1)).unwrap_or(false) {
-            raw_target
-        } else {
-            match grid.find_nearest_passable(raw_target, &terrain) {
-                Some(t) => t,
-                None => {
-                    pf.last_pathfinding_failure = now;
-                    pf.last_failed_target = Some(raw_target);
-                    return;
-                }
-            }
-        };
-
-        match grid.find_path_cached(transform.translation, target, &terrain, &mut pf, now) {
+        match result {
             Some(path) if !path.is_empty() => {
+                if let Some(grid) = grid_res.as_ref() {
+                    if let Some(goal_grid) = grid.grid.world_to_grid(raw_target) {
+                        update_path_cache(&mut pf, goal_grid, &path, now);
+                    }
+                }
                 pf.path = path;
                 pf.path_index = 0;
             }
@@ -365,11 +470,11 @@ pub fn pathfinding_system(
                 pf.last_failed_target = Some(raw_target);
             }
         }
-    });
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Plugin (grid setup only — pathfinding_system is registered by MovementPlugin)
+// Plugin (grid setup only — request_paths / poll_path_tasks registered by MovementPlugin)
 // ---------------------------------------------------------------------------
 
 pub struct PathfindingPlugin;
@@ -393,6 +498,11 @@ fn setup_pathfinding_grid(
     let Some(terrain) = terrain else { return };
 
     let world_size = crate::core::constants::movement::MAP_BOUNDARY * 2.0;
-    commands.insert_resource(TerrainPathfindingGrid::from_terrain(&terrain, world_size));
+    let grid = TerrainPathfindingGrid::from_terrain(&terrain, world_size);
+    let grid_arc = Arc::new(grid.clone());
+    // StaticTerrainHeights is deterministic (seed 42) — construct a fresh instance for the Arc.
+    let terrain_arc = Arc::new(StaticTerrainHeights::default());
+    commands.insert_resource(grid);
+    commands.insert_resource(PathfindingGridResource { grid: grid_arc, terrain: terrain_arc });
     *initialized = true;
 }

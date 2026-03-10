@@ -5,7 +5,7 @@
 //! Outputs: `UnitArrivedEvent` (fired when a unit exhausts its path)
 //!
 //! System order each Update frame:
-//!   apply_movement_targets → stop_unit_movement → pathfinding_system → move_units → sync_position_component
+//!   apply_movement_targets → stop_unit_movement → request_paths → poll_path_tasks → move_units → sync_position_component
 
 pub mod events;
 pub mod formation;
@@ -19,7 +19,7 @@ use crate::core::components::*;
 use crate::core::constants::movement as mc;
 use crate::world::static_terrain::StaticTerrainHeights;
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
-use self::pathfinding::pathfinding_system;
+use self::pathfinding::{request_paths, poll_path_tasks};
 use self::unstuck::{add_stuck_detection, unstuck_system};
 
 pub struct MovementPlugin;
@@ -35,7 +35,8 @@ impl Plugin for MovementPlugin {
                     add_stuck_detection,
                     apply_movement_targets,
                     stop_unit_movement,
-                    pathfinding_system,
+                    request_paths,
+                    poll_path_tasks,
                     move_units,
                     sync_position_component,
                     unstuck_system,
