@@ -10,6 +10,12 @@ pub struct HoveredUnit {
     pub last_update: f32,
 }
 
+/// Resource to track which resource source is currently being hovered
+#[derive(Resource, Default)]
+pub struct HoveredResource {
+    pub entity: Option<Entity>,
+}
+
 /// Component marking the tooltip UI element
 #[derive(Component)]
 pub struct UnitTooltip;
@@ -105,6 +111,54 @@ pub fn unit_hover_detection_system(
         hovered_unit.entity = closest_entity;
         hovered_unit.last_update = time.elapsed_secs();
     }
+}
+
+/// System to detect which resource source is under the cursor
+pub fn resource_hover_detection_system(
+    mut hovered_resource: ResMut<HoveredResource>,
+    windows: Query<&Window>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
+    resources: Query<(Entity, &Transform, &CollisionRadius), With<ResourceSource>>,
+) {
+    let Ok(window) = windows.get_single() else { return; };
+    let Ok((camera, camera_transform)) = camera_q.get_single() else { return; };
+
+    let Some(cursor_position) = window.cursor_position() else {
+        hovered_resource.entity = None;
+        return;
+    };
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+        hovered_resource.entity = None;
+        return;
+    };
+
+    let mut closest_distance = f32::INFINITY;
+    let mut closest_entity = None;
+
+    for (entity, transform, collision) in resources.iter() {
+        let to_entity = transform.translation - ray.origin;
+        let projected_distance = to_entity.dot(*ray.direction);
+        if projected_distance <= 0.0 {
+            continue;
+        }
+        let closest_point = ray.origin + *ray.direction * projected_distance;
+        let distance_to_ray = closest_point.distance(transform.translation);
+        if distance_to_ray < collision.radius && projected_distance < closest_distance {
+            closest_distance = projected_distance;
+            closest_entity = Some(entity);
+        }
+    }
+
+    hovered_resource.entity = closest_entity;
+}
+
+/// Builds tooltip text for a hovered resource source.
+fn build_resource_tooltip_content(
+    entity: Entity,
+    resource_source_query: &Query<(&ResourceSource, &CollisionRadius)>,
+) -> Option<String> {
+    let (source, _) = resource_source_query.get(entity).ok()?;
+    Some(format!("{:?}\n{:.0} remaining", source.resource_type, source.amount))
 }
 
 /// Determine the current task of a unit
@@ -203,7 +257,9 @@ pub struct UnitDataQueries<'w, 's> {
     pub combat_query: Query<'w, 's, &'static Combat>,
     pub movement_query: Query<'w, 's, &'static Movement>,
     pub building_query: Query<'w, 's, &'static Building>,
+    pub resource_source_query: Query<'w, 's, (&'static ResourceSource, &'static CollisionRadius)>,
 }
+
 
 /// Parameter group for unit state queries to reduce parameter count
 #[derive(SystemParam)]
@@ -261,6 +317,7 @@ fn player_display_name(unit: &RTSUnit, unit_state: &UnitStateQueries) -> String 
 /// System to update tooltip content and position
 pub fn update_tooltip_system(
     hovered_unit: Res<HoveredUnit>,
+    hovered_resource: Res<HoveredResource>,
     unit_data: UnitDataQueries,
     unit_state: UnitStateQueries,
     mut tooltip_ui: TooltipUI,
@@ -272,24 +329,40 @@ pub fn update_tooltip_system(
         return;
     };
 
+    if let Some(entity) = hovered_resource.entity {
+        if let Some(text) = build_resource_tooltip_content(entity, &unit_data.resource_source_query) {
+            show_tooltip(&mut tooltip_style, &mut tooltip_bg, &mut tooltip_text, &tooltip_ui.windows, text);
+            *tooltip_bg = BackgroundColor(Color::srgba(0.10, 0.12, 0.05, 0.95));
+            return;
+        }
+    }
+
     let Some((text, player_id)) = build_tooltip_content(hovered_unit.entity, &unit_data, &unit_state) else {
         tooltip_style.display = Display::None;
         return;
     };
 
-    **tooltip_text = text;
-
-    if let Ok(window) = tooltip_ui.windows.get_single() {
-        if let Some(cursor_pos) = window.cursor_position() {
-            tooltip_style.left = Val::Px(cursor_pos.x + 15.0);
-            tooltip_style.top = Val::Px(cursor_pos.y + 15.0);
-        }
-    }
-
-    tooltip_style.display = Display::Flex;
+    show_tooltip(&mut tooltip_style, &mut tooltip_bg, &mut tooltip_text, &tooltip_ui.windows, text);
     if player_id == 1 {
         *tooltip_bg = BackgroundColor(Color::srgba(0.05, 0.15, 0.15, 0.95));
     } else {
         *tooltip_bg = BackgroundColor(Color::srgba(0.15, 0.05, 0.05, 0.95));
     }
+}
+
+fn show_tooltip(
+    style: &mut Node,
+    _bg: &mut BackgroundColor,
+    text: &mut Text,
+    windows: &Query<&Window>,
+    content: String,
+) {
+    **text = content;
+    if let Ok(window) = windows.get_single() {
+        if let Some(cursor_pos) = window.cursor_position() {
+            style.left = Val::Px(cursor_pos.x + 15.0);
+            style.top = Val::Px(cursor_pos.y + 15.0);
+        }
+    }
+    style.display = Display::Flex;
 }
