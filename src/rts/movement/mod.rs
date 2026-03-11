@@ -20,6 +20,7 @@ use crate::core::constants::movement as mc;
 use crate::world::static_terrain::StaticTerrainHeights;
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
 use self::pathfinding::{request_paths, poll_path_tasks};
+use self::pathfinding::systems::PathTask;
 use self::unstuck::{add_stuck_detection, unstuck_system};
 
 pub struct MovementPlugin;
@@ -52,11 +53,13 @@ impl Plugin for MovementPlugin {
 
 /// Sole writer of `Movement.target_position` — applies `MovementTargetEvent`.
 fn apply_movement_targets(
+    mut commands: Commands,
     mut units: Query<(&mut Movement, &mut PathfindingState)>,
     mut events: EventReader<MovementTargetEvent>,
 ) {
     for ev in events.read() {
         let Ok((mut mv, mut pf)) = units.get_mut(ev.entity) else { continue };
+        commands.entity(ev.entity).remove::<PathTask>();
         mv.target_position = Some(ev.target_position);
         pf.path.clear();
         pf.path_index = 0;

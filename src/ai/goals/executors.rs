@@ -3,6 +3,7 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use crate::core::components::ResourceSource;
 use crate::core::resources::Stockpiles;
 use crate::rts::resource::events::SetTargetResourceEvent;
 use crate::rts::movement::events::MovementTargetEvent;
@@ -22,11 +23,12 @@ pub fn execute_ai_goals_system(
     mut goals: ResMut<GlobalGoalManager>,
     mut writers: AiGoalWriters,
     mut stockpiles: ResMut<Stockpiles>,
+    resources: Query<&ResourceSource>,
 ) {
     for pg in goals.drain_sorted() {
         match &pg.goal {
             UnifiedGoal::AssignWorkerToResource { .. } => {
-                execute_assign_worker(&pg.goal, &mut writers);
+                execute_assign_worker(&pg.goal, &mut writers, &resources);
             }
             UnifiedGoal::BuildUnit { .. } => {
                 execute_build_unit(&pg.goal, &mut writers, &mut stockpiles);
@@ -35,7 +37,11 @@ pub fn execute_ai_goals_system(
     }
 }
 
-fn execute_assign_worker(goal: &UnifiedGoal, writers: &mut AiGoalWriters) {
+fn execute_assign_worker(
+    goal: &UnifiedGoal,
+    writers: &mut AiGoalWriters,
+    resources: &Query<&ResourceSource>,
+) {
     let UnifiedGoal::AssignWorkerToResource {
         worker,
         resource_entity,
@@ -45,6 +51,13 @@ fn execute_assign_worker(goal: &UnifiedGoal, writers: &mut AiGoalWriters) {
     else {
         return;
     };
+    let is_available = resources
+        .get(*resource_entity)
+        .map(|r| r.amount > 0.0)
+        .unwrap_or(false);
+    if !is_available {
+        return;
+    }
     writers.set_target.send(SetTargetResourceEvent {
         gatherer: *worker,
         target_resource: *resource_entity,

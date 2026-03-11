@@ -69,7 +69,7 @@ use crate::core::components::*;
 use super::{GatheringState, GatheringStateType};
 use crate::core::constants::resource_interaction::{GATHERING_DISTANCE, DROPOFF_TRAVEL_DISTANCE};
 use crate::core::resources::Stockpiles;
-use super::events::{ClearTargetResourceEvent, ResetCargoEvent};
+use super::events::{ClearTargetResourceEvent, ResetCargoEvent, ResourceDepletedEvent};
 use crate::rts::movement::events::MovementTargetEvent;
 
 type GathererQuery<'w, 's> = Query<
@@ -91,6 +91,7 @@ pub(super) struct GatheringCtx<'w, 's> {
     move_events: EventWriter<'w, MovementTargetEvent>,
     clear_target_events: EventWriter<'w, ClearTargetResourceEvent>,
     reset_cargo_events: EventWriter<'w, ResetCargoEvent>,
+    resource_depleted_events: EventWriter<'w, ResourceDepletedEvent>,
 }
 
 /// Core gathering loop — runs each frame for all active gatherers.
@@ -149,10 +150,7 @@ fn tick_gathering(
 
     if resource.amount <= 0.0 {
         resource.amount = 0.0;
-        ctx.clear_target_events.send(ClearTargetResourceEvent {
-            gatherer: entity,
-            clear_resource_type: false, // Keep resource_type — worker still has cargo to deliver.
-        });
+        ctx.resource_depleted_events.send(ResourceDepletedEvent { resource_entity });
     }
 }
 

@@ -50,6 +50,7 @@ impl Plugin for ResourceStatePlugin {
             .add_event::<ClearTargetResourceEvent>()
             .add_event::<SetTargetResourceEvent>()
             .add_event::<ResetCargoEvent>()
+            .add_event::<ResourceDepletedEvent>()
             .add_systems(
                 Update,
                 (
@@ -79,7 +80,19 @@ pub fn resource_state_system(
     mut clear_target_events: EventReader<ClearTargetResourceEvent>,
     mut set_target_events: EventReader<SetTargetResourceEvent>,
     mut reset_cargo_events: EventReader<ResetCargoEvent>,
+    mut resource_depleted_events: EventReader<ResourceDepletedEvent>,
 ) {
+    for event in resource_depleted_events.read() {
+        for mut gatherer in gatherers.iter_mut() {
+            if gatherer.target_resource == Some(event.resource_entity) {
+                gatherer.target_resource = None;
+                if gatherer.carried_amount == 0.0 {
+                    gatherer.resource_type = None;
+                }
+            }
+        }
+    }
+
     for event in clear_target_events.read() {
         let Ok(mut gatherer) = gatherers.get_mut(event.gatherer) else {
             continue;

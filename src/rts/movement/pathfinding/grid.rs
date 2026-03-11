@@ -186,7 +186,7 @@ struct SearchResult {
     closed: HashMap<(i32, i32), Node>,
 }
 
-const MAX_NODES: usize = 500_000;
+const MAX_NODES: usize = 500_000_000;
 
 fn init_search(grid: &TerrainPathfindingGrid, start: Vec3, goal: Vec3) -> Option<SearchState> {
     let sg = grid.world_to_grid(start)?;

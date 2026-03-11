@@ -22,3 +22,10 @@ pub struct SetTargetResourceEvent {
 pub struct ResetCargoEvent {
     pub gatherer: Entity,
 }
+
+/// Broadcast when a resource node is fully depleted.
+/// `resource_state_system` clears `target_resource` on every gatherer that targets this entity.
+#[derive(Event, Debug, Clone)]
+pub struct ResourceDepletedEvent {
+    pub resource_entity: Entity,
+}
