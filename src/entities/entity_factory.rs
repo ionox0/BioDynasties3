@@ -219,7 +219,8 @@ fn building_model_path(building_type: &BuildingType) -> &'static str {
 
 fn unit_model_scale(unit_type: &UnitType) -> f32 {
     match unit_type {
-        UnitType::WorkerAnt | UnitType::TermiteWorker => 15.0,
+        UnitType::WorkerAnt | UnitType::TermiteWorker => 3.75,
+        UnitType::ScoutAnt => 3.75,
         UnitType::BeetleKnight => 8.0,
         UnitType::DragonFly => 5.0,
         _ => 15.0,
