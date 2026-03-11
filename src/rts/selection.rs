@@ -2,7 +2,20 @@ use crate::core::components::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-type ChangedSelectablesWithTransform<'w, 's> = Query<'w, 's, (Entity, &'static Selectable, &'static Transform), (With<RTSUnit>, Changed<Selectable>)>;
+#[derive(SystemParam)]
+pub(crate) struct PlayerSelectables<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Selectable, &'static Transform, &'static RTSUnit)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct ChangedSelectables<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Selectable, &'static Transform), (With<RTSUnit>, Changed<Selectable>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct DeselectedUnits<'w, 's> {
+    query: Query<'w, 's, &'static Selectable, (With<RTSUnit>, Without<SelectionIndicator>)>,
+}
 
 pub struct SelectionPlugin;
 
@@ -55,7 +68,7 @@ pub fn click_selection_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    selectables: Query<(Entity, &Selectable, &Transform, &RTSUnit)>,
+    selectables: PlayerSelectables,
     mut changed_events: EventWriter<SelectionChangedEvent>,
     mut cleared_events: EventWriter<SelectionClearedEvent>,
 ) {
@@ -79,7 +92,7 @@ pub fn click_selection_system(
     };
 
     let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-    let closest_entity = find_closest_entity_to_ray(&selectables, ray);
+    let closest_entity = find_closest_entity_to_ray(&selectables.query, ray);
 
     if let Some(selected_entity) = closest_entity {
         if !shift_held {
@@ -87,7 +100,7 @@ pub fn click_selection_system(
         }
         let is_selected = if shift_held {
             // Toggle: read current state
-            selectables
+            selectables.query
                 .get(selected_entity)
                 .map(|(_, s, _, _)| !s.is_selected)
                 .unwrap_or(true)
@@ -161,7 +174,7 @@ pub fn drag_selection_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    selectables: Query<(Entity, &Selectable, &Transform, &RTSUnit)>,
+    selectables: PlayerSelectables,
     mut state: DragSelectionMut,
 ) {
     let window = windows.single();
@@ -191,7 +204,7 @@ pub fn drag_selection_system(
     if mouse_button.just_released(MouseButton::Left) {
         finalize_selection(
             &mut state.drag_query,
-            &selectables,
+            &selectables.query,
             &keyboard,
             &state.box_query,
             &mut state.commands,
@@ -487,13 +500,13 @@ fn create_hollow_ring_mesh(radius: f32, segments: usize) -> Mesh {
 /// System to create selection indicators for newly selected units
 pub fn create_selection_indicators(
     mut commands: Commands,
-    selectables: ChangedSelectablesWithTransform,
+    selectables: ChangedSelectables,
     existing_indicators: Query<&SelectionIndicator>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     terrain_heights: Res<crate::world::static_terrain::StaticTerrainHeights>,
 ) {
-    for (entity, selectable, transform) in selectables.iter() {
+    for (entity, selectable, transform) in selectables.query.iter() {
         let has_indicator = existing_indicators.iter().any(|ind| ind.target == entity);
 
         if selectable.is_selected && !has_indicator {
@@ -513,11 +526,11 @@ pub fn create_selection_indicators(
 /// System to remove indicators for deselected units
 pub fn selection_indicator_system(
     selection_indicators: Query<(Entity, &SelectionIndicator)>,
-    selectables: Query<&Selectable, (With<RTSUnit>, Without<SelectionIndicator>)>,
+    deselected: DeselectedUnits,
     mut commands: Commands,
 ) {
     for (indicator_entity, selection_indicator) in selection_indicators.iter() {
-        if let Ok(selectable) = selectables.get(selection_indicator.target) {
+        if let Ok(selectable) = deselected.query.get(selection_indicator.target) {
             if !selectable.is_selected {
                 commands
                     .entity(selection_indicator.target)

@@ -3,11 +3,24 @@
 //! Owns `CursorState` resource. Other systems read it to determine what's under
 //! the cursor without duplicating the ray-cast logic.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Building, ResourceSource, RTSUnit, Selectable};
 
-type UnitQuery<'w, 's> = Query<'w, 's, (Entity, &'static Transform, &'static Selectable), (With<RTSUnit>, Without<Building>)>;
-type BuildingQuery<'w, 's> = Query<'w, 's, (Entity, &'static Transform, &'static Selectable), With<Building>>;
+#[derive(SystemParam)]
+pub(crate) struct SelectableUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), (With<RTSUnit>, Without<Building>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct SelectableBuildings<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), With<Building>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct ResourceNodes<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform), With<ResourceSource>>,
+}
 
 /// What category of object is currently under the cursor.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,9 +59,9 @@ fn update_cursor_state(
     mut cursor_state: ResMut<CursorState>,
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    units: UnitQuery,
-    buildings: BuildingQuery,
-    resources: Query<(Entity, &Transform), With<ResourceSource>>,
+    units: SelectableUnits,
+    buildings: SelectableBuildings,
+    resources: ResourceNodes,
 ) {
     let Ok(window) = windows.get_single() else { return };
     let Ok((camera, camera_tf)) = camera_q.get_single() else { return };
@@ -71,7 +84,7 @@ fn update_cursor_state(
 
     // Check units
     let mut best_unit: Option<(Entity, f32)> = None;
-    for (entity, transform, sel) in units.iter() {
+    for (entity, transform, sel) in units.query.iter() {
         if let Some(proj) = ray_sphere_proj(&ray, transform.translation, sel.selection_radius) {
             if best_unit.is_none_or(|(_, d)| proj < d) {
                 best_unit = Some((entity, proj));
@@ -85,7 +98,7 @@ fn update_cursor_state(
 
     // Check buildings
     let mut best_building: Option<(Entity, f32)> = None;
-    for (entity, transform, sel) in buildings.iter() {
+    for (entity, transform, sel) in buildings.query.iter() {
         if let Some(proj) = ray_sphere_proj(&ray, transform.translation, sel.selection_radius) {
             if best_building.is_none_or(|(_, d)| proj < d) {
                 best_building = Some((entity, proj));
@@ -99,7 +112,7 @@ fn update_cursor_state(
 
     // Check resources
     let mut best_resource: Option<(Entity, f32)> = None;
-    for (entity, transform) in resources.iter() {
+    for (entity, transform) in resources.query.iter() {
         if let Some(proj) = ray_sphere_proj(&ray, transform.translation, 8.0) {
             if best_resource.is_none_or(|(_, d)| proj < d) {
                 best_resource = Some((entity, proj));

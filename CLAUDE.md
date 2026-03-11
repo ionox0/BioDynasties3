@@ -48,6 +48,7 @@ All code must pass `cargo clippy` with no warnings. The project's `clippy.toml` 
 ### Bevy-Specific
 - Systems should be small and focused. Split a system into helpers if it handles more than one logical concern.
 - Use components/resources to share state; do not pass Bevy `World` or `Commands` deeper than one level into a call stack.
+- **Named query structs (required):** Complex `Query` types must be defined as named `#[derive(SystemParam)]` structs outside of function arguments, not inline. A query is "complex" if it has a filter (`With<T>`, `Without<T>`, etc.) or fetches more than two components. Name the struct after what it represents, not what it queries (e.g., `IdleWorkers`, not `WorkerQuery`). Give the struct the minimum visibility needed to satisfy the compiler (`pub(crate)` for public systems).
 
 ### Event-Driven Architecture (Required)
 Systems must communicate exclusively through Bevy events. Direct mutation of another system's components is prohibited.

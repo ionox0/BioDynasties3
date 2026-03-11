@@ -5,28 +5,38 @@
 //! Fires `StartPlacementEvent` and `QueueProductionEvent` via events only.
 //! No direct mutation of `BuildingPlacement` or `ProductionQueue`.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Building, BuildingType, ProductionQueue, Selectable, UnitType};
 use crate::rts::production::QueueProductionEvent;
 use crate::ui::placement::{building_cost, StartPlacementEvent};
 
-// ─── Type aliases ─────────────────────────────────────────────────────────────
+// ─── SystemParam query structs ────────────────────────────────────────────────
 
-type BuildBtnQ<'w, 's> = Query<
-    'w, 's,
-    (&'static Interaction, &'static BuildButton),
-    (Changed<Interaction>, With<Button>),
->;
-type UnitBtnQ<'w, 's> = Query<
-    'w, 's,
-    (&'static Interaction, &'static UnitProductionButton),
-    (Changed<Interaction>, With<Button>),
->;
-type AllBuildingQ<'w, 's> = Query<
-    'w, 's,
-    (Entity, &'static Building, &'static Selectable),
-    With<ProductionQueue>,
->;
+#[derive(SystemParam)]
+pub(crate) struct BuildButtons<'w, 's> {
+    query: Query<'w, 's, (&'static Interaction, &'static BuildButton), (Changed<Interaction>, With<Button>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct UnitButtons<'w, 's> {
+    query: Query<'w, 's, (&'static Interaction, &'static UnitProductionButton), (Changed<Interaction>, With<Button>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct AllBuildings<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Building, &'static Selectable), With<ProductionQueue>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct ChangedSelectionBuildings<'w, 's> {
+    query: Query<'w, 's, Entity, (With<Building>, Changed<Selectable>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct ActionPanelSections<'w, 's> {
+    query: Query<'w, 's, Entity, With<ActionPanelUnitsSection>>,
+}
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
@@ -193,10 +203,10 @@ fn spawn_unit_button(parent: &mut ChildBuilder, building: Entity, unit_type: Uni
 // ─── Update systems ───────────────────────────────────────────────────────────
 
 fn handle_build_buttons(
-    btn_q: BuildBtnQ,
+    btn_q: BuildButtons,
     mut placement_events: EventWriter<StartPlacementEvent>,
 ) {
-    for (interaction, btn) in btn_q.iter() {
+    for (interaction, btn) in btn_q.query.iter() {
         if *interaction == Interaction::Pressed {
             placement_events.send(StartPlacementEvent { building_type: btn.building_type.clone() });
         }
@@ -206,17 +216,17 @@ fn handle_build_buttons(
 /// Rebuilds unit buttons whenever any building's selection state changes.
 fn update_units_section(
     mut commands: Commands,
-    section_q: Query<Entity, With<ActionPanelUnitsSection>>,
-    changed_q: Query<Entity, (With<Building>, Changed<Selectable>)>,
-    all_q: AllBuildingQ,
+    section: ActionPanelSections,
+    changed: ChangedSelectionBuildings,
+    all_buildings: AllBuildings,
 ) {
-    if changed_q.is_empty() { return; }
-    let Ok(section) = section_q.get_single() else { return };
-    commands.entity(section).despawn_descendants();
-    let Some((building_entity, building, _)) = all_q.iter().find(|(_, _, sel)| sel.is_selected) else {
+    if changed.query.is_empty() { return; }
+    let Ok(section_entity) = section.query.get_single() else { return };
+    commands.entity(section_entity).despawn_descendants();
+    let Some((building_entity, building, _)) = all_buildings.query.iter().find(|(_, _, sel)| sel.is_selected) else {
         return;
     };
-    commands.entity(section).with_children(|parent| {
+    commands.entity(section_entity).with_children(|parent| {
         for unit_type in production_units(&building.building_type) {
             spawn_unit_button(parent, building_entity, unit_type);
         }
@@ -224,10 +234,10 @@ fn update_units_section(
 }
 
 fn handle_unit_buttons(
-    btn_q: UnitBtnQ,
+    btn_q: UnitButtons,
     mut queue_events: EventWriter<QueueProductionEvent>,
 ) {
-    for (interaction, btn) in btn_q.iter() {
+    for (interaction, btn) in btn_q.query.iter() {
         if *interaction == Interaction::Pressed {
             queue_events.send(QueueProductionEvent { building: btn.building, unit_type: btn.unit_type.clone() });
         }

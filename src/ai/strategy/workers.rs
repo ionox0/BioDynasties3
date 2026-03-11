@@ -1,5 +1,6 @@
 //! Worker goal generation — assigns idle AI workers to resource nodes.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
 use crate::core::components::{ResourceGatherer, ResourceSource, RTSUnit, UnitType};
@@ -9,13 +10,23 @@ use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
 const WORKER_ASSIGNMENT_PRIORITY: f32 = 10.0;
 
+#[derive(SystemParam)]
+pub(crate) struct IdleWorkers<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static RTSUnit, &'static GatheringState, &'static Transform), With<ResourceGatherer>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct AvailableResources<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static ResourceSource, &'static Transform), Without<RTSUnit>>,
+}
+
 /// Finds idle AI workers and generates `AssignWorkerToResource` goals.
 pub fn worker_goal_system(
     mut goals: ResMut<GlobalGoalManager>,
-    workers: Query<(Entity, &RTSUnit, &GatheringState, &Transform), With<ResourceGatherer>>,
-    resources: Query<(Entity, &ResourceSource, &Transform), Without<RTSUnit>>,
+    workers: IdleWorkers,
+    resources: AvailableResources,
 ) {
-    for (entity, unit, state, transform) in workers.iter() {
+    for (entity, unit, state, transform) in workers.query.iter() {
         if unit.player_id < 2 {
             continue;
         }
@@ -26,7 +37,7 @@ pub fn worker_goal_system(
             continue;
         }
         let Some((resource_entity, resource_type, resource_pos)) =
-            find_nearest_resource(transform.translation, &resources)
+            find_nearest_resource(transform.translation, &resources.query)
         else {
             println!("Idle worker has no available resources to gather");
             continue;
@@ -45,7 +56,7 @@ pub fn worker_goal_system(
 
 fn find_nearest_resource(
     pos: Vec3,
-    resources: &Query<(Entity, &ResourceSource, &Transform), Without<RTSUnit>>,
+    resources: &Query<(Entity, &'static ResourceSource, &'static Transform), Without<RTSUnit>>,
 ) -> Option<(Entity, ResourceType, Vec3)> {
     let mut candidates: Vec<_> = resources
         .iter()

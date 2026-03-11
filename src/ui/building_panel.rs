@@ -3,11 +3,26 @@
 //! Shows when a building is selected; buttons fire `QueueProductionEvent`.
 //! No direct `ProductionQueue` mutation — all changes go through events.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Building, BuildingType, ProductionQueue, Selectable, UnitType};
 use crate::rts::production::QueueProductionEvent;
 
-type ProdButtonQuery<'w, 's> = Query<'w, 's, (&'static Interaction, &'static ProductionButton), (Changed<Interaction>, With<Button>)>;
+#[derive(SystemParam)]
+pub(crate) struct ProductionButtons<'w, 's> {
+    query: Query<'w, 's, (&'static Interaction, &'static ProductionButton), (Changed<Interaction>, With<Button>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct BuildingPanelUI<'w, 's> {
+    children: Query<'w, 's, (Entity, &'static Children), With<BuildingPanel>>,
+    style: Query<'w, 's, &'static mut Node, With<BuildingPanel>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct SelectedProductionBuildings<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Building, &'static Selectable), With<ProductionQueue>>,
+}
 
 /// Marker for the building panel root node.
 #[derive(Component)]
@@ -55,14 +70,14 @@ fn setup_building_panel(mut commands: Commands) {
 /// Shows the panel with production buttons for whichever building is selected.
 fn update_building_panel(
     mut commands: Commands,
-    panel_q: Query<(Entity, &Children), With<BuildingPanel>>,
-    mut panel_style_q: Query<&mut Node, With<BuildingPanel>>,
-    selected_buildings: Query<(Entity, &Building, &Selectable), With<ProductionQueue>>,
+    mut panel: BuildingPanelUI,
+    selected_buildings: SelectedProductionBuildings,
 ) {
-    let Ok((panel_entity, _children)) = panel_q.get_single() else { return };
-    let Ok(mut panel_node) = panel_style_q.get_single_mut() else { return };
+    let Ok((panel_entity, _children)) = panel.children.get_single() else { return };
+    let Ok(mut panel_node) = panel.style.get_single_mut() else { return };
 
     let selected = selected_buildings
+        .query
         .iter()
         .find(|(_, _, sel)| sel.is_selected);
 
@@ -116,10 +131,10 @@ fn update_building_panel(
 
 /// Fires `QueueProductionEvent` when a production button is clicked.
 fn handle_production_buttons(
-    interaction_q: ProdButtonQuery,
+    interaction_q: ProductionButtons,
     mut queue_events: EventWriter<QueueProductionEvent>,
 ) {
-    for (interaction, btn) in interaction_q.iter() {
+    for (interaction, btn) in interaction_q.query.iter() {
         if *interaction == Interaction::Pressed {
             queue_events.send(QueueProductionEvent {
                 building: btn.building,

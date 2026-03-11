@@ -38,22 +38,47 @@
 
 pub mod events;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::spatial_grid::IncrementalSpatialGrid;
 use crate::rts::movement::events::{MovementTargetEvent, StopMovementEvent};
 use self::events::{CombatStopEvent, CombatTargetEvent, DamageEvent, DeathEvent};
 
-type AliveQuery<'w, 's> = Query<
-    'w, 's,
-    (Entity, &'static Transform, &'static RTSUnit),
-    (With<RTSHealth>, Without<Dying>),
->;
-type TargetQuery<'w, 's> = Query<
-    'w, 's,
-    (&'static Transform, &'static CollisionRadius),
-    (With<RTSHealth>, Without<Dying>),
->;
+#[derive(SystemParam)]
+pub(crate) struct AliveUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static RTSUnit), (With<RTSHealth>, Without<Dying>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct CombatTargets<'w, 's> {
+    query: Query<'w, 's, (&'static Transform, &'static CollisionRadius), (With<RTSHealth>, Without<Dying>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct CombatUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct AttackingUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, &'static CollisionRadius)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct HealthyUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static mut RTSHealth), Without<Dying>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct CombatStateUnits<'w, 's> {
+    query: Query<'w, 's, (&'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct AliveUnitTransforms<'w, 's> {
+    query: Query<'w, 's, &'static Transform, (With<RTSHealth>, Without<Dying>)>,
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -160,21 +185,21 @@ fn combat_stop_handler(
 
 /// Refreshes the spatial grid, validates existing targets, and auto-acquires new ones.
 fn target_management_system(
-    mut combat_q: Query<(Entity, &mut Combat, &Transform, &RTSUnit)>,
-    alive_q: AliveQuery,
+    mut combatants: CombatUnits,
+    alive: AliveUnits,
     mut target_grid: ResMut<TargetGrid>,
     mut removed: RemovedComponents<RTSUnit>,
 ) {
     for entity in removed.read() {
         target_grid.0.remove_item(entity);
     }
-    for (entity, transform, unit) in alive_q.iter() {
+    for (entity, transform, unit) in alive.query.iter() {
         target_grid.0.update_item(entity, transform.translation, (transform.translation, unit.player_id));
     }
 
-    for (_, mut combat, transform, unit) in combat_q.iter_mut() {
+    for (_, mut combat, transform, unit) in combatants.query.iter_mut() {
         if let Some(target) = combat.target {
-            if alive_q.get(target).is_err() {
+            if alive.query.get(target).is_err() {
                 combat.target = None;
             }
         }
@@ -198,26 +223,20 @@ fn target_management_system(
 
 /// Moves units toward their target and fires `DamageEvent` when in range.
 fn combat_execution_system(
-    mut unit_q: Query<(
-        Entity,
-        &mut Combat,
-        &Transform,
-        &RTSUnit,
-        &CollisionRadius,
-    )>,
-    target_q: TargetQuery,
+    mut attackers: AttackingUnits,
+    targets: CombatTargets,
     mut damage_events: EventWriter<DamageEvent>,
     mut move_events: EventWriter<MovementTargetEvent>,
     mut stop_events: EventWriter<StopMovementEvent>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (attacker, mut combat, atf, unit, acol) in unit_q.iter_mut() {
+    for (attacker, mut combat, atf, unit, acol) in attackers.query.iter_mut() {
         let Some(target) = combat.target else {
             combat.is_attacking = false;
             continue;
         };
-        let Ok((ttf, tcol)) = target_q.get(target) else {
+        let Ok((ttf, tcol)) = targets.query.get(target) else {
             combat.target = None;
             combat.is_attacking = false;
             continue;
@@ -253,13 +272,13 @@ fn combat_execution_system(
 fn damage_resolution_system(
     mut commands: Commands,
     mut damage_events: EventReader<DamageEvent>,
-    mut health_q: Query<(Entity, &mut RTSHealth), Without<Dying>>,
+    mut living: HealthyUnits,
     mut death_events: EventWriter<DeathEvent>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
     for ev in damage_events.read() {
-        let Ok((target_entity, mut health)) = health_q.get_mut(ev.target) else { continue };
+        let Ok((target_entity, mut health)) = living.query.get_mut(ev.target) else { continue };
         let actual = apply_armor(ev.damage, health.armor, &ev.damage_type);
         health.current = (health.current - actual).max(0.0);
         health.last_damage_time = now;
@@ -354,18 +373,18 @@ fn add_combat_state_to_fighters(
 }
 
 fn update_combat_states(
-    mut query: Query<(&mut CombatState, &Combat, &Transform, Option<&Movement>)>,
-    targets: Query<&Transform, (With<RTSHealth>, Without<Dying>)>,
+    mut units: CombatStateUnits,
+    alive_transforms: AliveUnitTransforms,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (mut state, combat, transform, movement) in query.iter_mut() {
-        let new_state = derive_combat_state(combat, transform, movement, &targets);
+    for (mut state, combat, transform, movement) in units.query.iter_mut() {
+        let new_state = derive_combat_state(combat, transform, movement, &alive_transforms.query);
         if new_state != state.state {
             state.state = new_state;
             state.last_state_change = now;
         }
-        update_target_refs(&mut state, combat, &targets);
+        update_target_refs(&mut state, combat, &alive_transforms.query);
     }
 }
 

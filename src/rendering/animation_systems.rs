@@ -5,7 +5,26 @@ use bevy::prelude::*;
 use bevy_animation::graph::AnimationNodeIndex;
 use bevy_animation::prelude::{AnimationGraph, AnimationGraphHandle};
 
-type UnitsWithoutControllerQuery<'w, 's> = Query<'w, 's, (Entity, &'static RTSUnit), (Without<UnitAnimationController>, With<RTSUnit>)>;
+#[derive(SystemParam)]
+pub(crate) struct UncontrolledUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static RTSUnit), (Without<UnitAnimationController>, With<RTSUnit>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct AnimationPlayerAssignment<'w, 's> {
+    controllers: Query<'w, 's, (Entity, &'static mut UnitAnimationController), Without<AnimationPlayer>>,
+    players: Query<'w, 's, Entity, With<AnimationPlayer>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct PendingGlbModels<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static SceneRoot, &'static mut UnitAnimationController, &'static RTSUnit), Without<AnimationPlayerSearched>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct RecentlyChangedControllers<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static mut UnitAnimationController), Changed<UnitAnimationController>>,
+}
 
 pub struct AnimationPlugin;
 
@@ -221,13 +240,12 @@ pub fn update_animations(
 // System to find animation players for controllers
 // This waits for GLB scene instantiation to complete before searching
 pub fn find_animation_players(
-    mut controllers: Query<(Entity, &mut UnitAnimationController), Without<AnimationPlayer>>,
-    animation_players: Query<Entity, With<AnimationPlayer>>,
+    mut assignment: AnimationPlayerAssignment,
     children: Query<&Children>,
     parents: Query<&Parent>,
     scene_roots: Query<&SceneRoot>,
 ) {
-    for (controller_entity, mut controller) in controllers.iter_mut() {
+    for (controller_entity, mut controller) in assignment.controllers.iter_mut() {
         let None = controller.animation_player else { continue; };
         // Check if this entity has a SceneRoot (GLB model)
         if let Ok(_scene_root) = scene_roots.get(controller_entity) {
@@ -240,7 +258,7 @@ pub fn find_animation_players(
 
             // Scene is ready (has children), now search for animation players
             if let Some(player) =
-                search_recursive_for_player(controller_entity, &children, &animation_players, 0)
+                search_recursive_for_player(controller_entity, &children, &assignment.players, 0)
             {
                 controller.animation_player = Some(player);
             }
@@ -250,7 +268,7 @@ pub fn find_animation_players(
                 controller_entity,
                 &children,
                 &parents,
-                &animation_players,
+                &assignment.players,
             ) {
                 controller.animation_player = Some(player);
             }
@@ -320,13 +338,10 @@ fn search_simple_for_player(
 
 // System to start idle animations for units that just got their animation player assigned
 pub fn start_idle_animations(
-    mut controllers: Query<
-        (Entity, &mut UnitAnimationController),
-        Changed<UnitAnimationController>,
-    >,
+    mut changed_controllers: RecentlyChangedControllers,
     mut animation_players: Query<&mut AnimationPlayer>,
 ) {
-    for (_entity, controller) in controllers.iter_mut() {
+    for (_entity, controller) in changed_controllers.query.iter_mut() {
         // If we just got an animation player assigned, start the idle animation
         if let Some(player_entity) = controller.animation_player {
             if let Ok(mut player) = animation_players.get_mut(player_entity) {
@@ -343,9 +358,9 @@ pub fn start_idle_animations(
 // System to retroactively add animation controllers to units that don't have them
 pub fn add_missing_animation_controllers(
     mut commands: Commands,
-    units_without_controllers: UnitsWithoutControllerQuery,
+    units: UncontrolledUnits,
 ) {
-    for (entity, unit) in units_without_controllers.iter() {
+    for (entity, unit) in units.query.iter() {
         // Only add animation controller to units with a specific type
         let Some(_unit_type) = &unit.unit_type else {
             continue;
@@ -370,17 +385,14 @@ pub fn add_missing_animation_controllers(
 // System to set up animations for GLB models
 // In Bevy 0.15, GLB animations are loaded automatically, but AnimationPlayer might be on child entities
 pub fn setup_glb_animations(
-    mut glb_models: Query<
-        (Entity, &SceneRoot, &mut UnitAnimationController, &RTSUnit),
-        Without<AnimationPlayerSearched>,
-    >,
+    mut glb_models: PendingGlbModels,
     mut animation_players: Query<&mut AnimationPlayer>,
     mut animation_graphs: ResMut<Assets<AnimationGraph>>,
     mut commands: Commands,
     children: Query<&Children>,
     asset_server: Res<AssetServer>,
 ) {
-    for (entity, scene_root, mut controller, rts_unit) in glb_models.iter_mut() {
+    for (entity, scene_root, mut controller, rts_unit) in glb_models.query.iter_mut() {
         // Check if scene has children (indicating it's loaded)
         if children.get(entity).is_err() {
             continue;

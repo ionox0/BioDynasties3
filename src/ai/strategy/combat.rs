@@ -3,6 +3,7 @@
 //! Pushes `BuildUnit` goals into `GlobalGoalManager` to build a military force.
 //! Goal quantities scale with the current army size.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Building, ProductionQueue, RTSUnit, UnitType};
 use crate::core::resources::Stockpiles;
@@ -10,11 +11,16 @@ use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
 const COMBAT_GOAL_PRIORITY_BASE: f32 = 60.0;
 
+#[derive(SystemParam)]
+pub(crate) struct ProductionBuildings<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Building), With<ProductionQueue>>,
+}
+
 /// System that generates `BuildUnit` goals for military units.
 pub fn combat_goal_system(
     mut goals: ResMut<GlobalGoalManager>,
     units: Query<&RTSUnit>,
-    buildings: Query<(Entity, &Building), With<ProductionQueue>>,
+    buildings: ProductionBuildings,
     stockpiles: Res<Stockpiles>,
 ) {
     for (player_id, stockpile) in stockpiles.0.iter() {
@@ -25,7 +31,7 @@ pub fn combat_goal_system(
         let military_units = early_military_roster();
         push_combat_goals(
             &mut goals,
-            &buildings,
+            &buildings.query,
             *player_id,
             military_count,
             &military_units,

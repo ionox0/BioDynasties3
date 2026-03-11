@@ -3,12 +3,36 @@
 //! Owns `HealthBarUI` and `HealthStatus` components.
 //! Uses change-detection on `RTSHealth` to update bar width efficiently.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Dying, RTSHealth, RTSUnit, Selectable};
 
-type NewUnitQuery<'w, 's> = Query<'w, 's, (Entity, &'static RTSHealth), (Added<RTSUnit>, Without<HealthBarUI>)>;
-type HealthBarQuery<'w, 's> = Query<'w, 's, (&'static HealthBarUI, &'static mut HealthStatus, &'static mut Node, &'static Children)>;
-type HealthFillQuery<'w, 's> = Query<'w, 's, (&'static mut Node, &'static mut BackgroundColor), (With<HealthFill>, Without<HealthBarUI>)>;
+#[derive(SystemParam)]
+pub(crate) struct NewUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static RTSHealth), (Added<RTSUnit>, Without<HealthBarUI>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct HealthBarViews<'w, 's> {
+    bars: Query<'w, 's, (&'static HealthBarUI, &'static mut HealthStatus, &'static mut Node, &'static Children)>,
+    fills: Query<'w, 's, (&'static mut Node, &'static mut BackgroundColor), (With<HealthFill>, Without<HealthBarUI>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct UnitPresence<'w, 's> {
+    dying: Query<'w, 's, Entity, With<Dying>>,
+    all: Query<'w, 's, Entity, With<RTSUnit>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct ChangedHealth<'w, 's> {
+    query: Query<'w, 's, &'static RTSHealth, Changed<RTSHealth>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct UnitTransforms<'w, 's> {
+    query: Query<'w, 's, &'static Transform, With<RTSUnit>>,
+}
 
 /// Marker for the health bar root node tied to a specific entity.
 // Owned by: HealthUIPlugin (setup_health_bars, cleanup_health_bars)
@@ -45,11 +69,8 @@ impl Plugin for HealthUIPlugin {
 }
 
 /// Spawns a health-bar UI element for each newly added `RTSUnit` that has `RTSHealth`.
-fn spawn_health_bars(
-    mut commands: Commands,
-    new_units: NewUnitQuery,
-) {
-    for (entity, health) in new_units.iter() {
+fn spawn_health_bars(mut commands: Commands, new_units: NewUnits) {
+    for (entity, health) in new_units.query.iter() {
         let fraction = health.current / health.max;
         commands.spawn((
             HealthBarUI { tracked: entity },
@@ -83,11 +104,10 @@ fn spawn_health_bars(
 fn cleanup_health_bars(
     mut commands: Commands,
     bars: Query<(Entity, &HealthBarUI)>,
-    dying: Query<Entity, With<Dying>>,
-    all_units: Query<Entity, With<RTSUnit>>,
+    units: UnitPresence,
 ) {
     for (bar_entity, bar) in bars.iter() {
-        let dead = dying.contains(bar.tracked) || all_units.get(bar.tracked).is_err();
+        let dead = units.dying.contains(bar.tracked) || units.all.get(bar.tracked).is_err();
         if dead {
             commands.entity(bar_entity).despawn_recursive();
         }
@@ -96,22 +116,21 @@ fn cleanup_health_bars(
 
 /// Updates health bar width and colour whenever `RTSHealth` changes.
 fn update_health_bars(
-    mut bar_q: HealthBarQuery,
-    mut fill_q: HealthFillQuery,
-    health_q: Query<&RTSHealth, Changed<RTSHealth>>,
+    mut bar_views: HealthBarViews,
+    health: ChangedHealth,
     selected_q: Query<&Selectable>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    unit_tf_q: Query<&Transform, With<RTSUnit>>,
+    unit_transforms: UnitTransforms,
 ) {
     let Ok((camera, camera_tf)) = camera_q.get_single() else { return };
 
-    for (bar, mut status, mut bar_node, children) in bar_q.iter_mut() {
-        let Ok(health) = health_q.get(bar.tracked) else { continue };
-        let fraction = (health.current / health.max).clamp(0.0, 1.0);
+    for (bar, mut status, mut bar_node, children) in bar_views.bars.iter_mut() {
+        let Ok(health_data) = health.query.get(bar.tracked) else { continue };
+        let fraction = (health_data.current / health_data.max).clamp(0.0, 1.0);
         status.fraction = fraction;
 
         // Position bar above unit in screen space
-        if let Ok(unit_tf) = unit_tf_q.get(bar.tracked) {
+        if let Ok(unit_tf) = unit_transforms.query.get(bar.tracked) {
             let above = unit_tf.translation + Vec3::Y * 12.0;
             if let Some(ndc) = camera.world_to_ndc(camera_tf, above) {
                 let viewport = camera.logical_viewport_size().unwrap_or(Vec2::new(1280.0, 720.0));
@@ -133,7 +152,7 @@ fn update_health_bars(
         }
 
         for &child in children.iter() {
-            let Ok((mut fill_node, mut fill_color)) = fill_q.get_mut(child) else { continue };
+            let Ok((mut fill_node, mut fill_color)) = bar_views.fills.get_mut(child) else { continue };
             fill_node.width = Val::Percent(fraction * 100.0);
             *fill_color = BackgroundColor(health_color(fraction));
         }

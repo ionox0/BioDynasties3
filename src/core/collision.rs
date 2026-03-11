@@ -13,26 +13,23 @@ use std::collections::{HashMap, HashSet};
 
 use constants::*;
 
-// --- Type aliases ---
+// --- SystemParam query structs ---
 
-type BuildingQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Position, &'static CollisionRadius),
-    (With<Building>, Without<Movement>),
->;
-type EnvQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Transform, &'static CollisionRadius),
-    (With<EnvironmentObject>, Without<Movement>),
->;
-type ReadUnitQuery<'w, 's> = Query<
-    'w,
-    's,
-    (Entity, &'static Transform, &'static Movement, &'static CollisionRadius),
-    With<RTSUnit>,
->;
+#[derive(SystemParam)]
+struct SpatiallyTrackedUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static CollisionRadius, &'static mut SpatialGridPosition), With<RTSUnit>>,
+}
+
+#[derive(SystemParam)]
+struct MovingUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static Movement, &'static CollisionRadius), With<RTSUnit>>,
+}
+
+#[derive(SystemParam)]
+struct StaticObstacles<'w, 's> {
+    buildings: Query<'w, 's, (&'static Position, &'static CollisionRadius), (With<Building>, Without<Movement>)>,
+    env: Query<'w, 's, (&'static Transform, &'static CollisionRadius), (With<EnvironmentObject>, Without<Movement>)>,
+}
 
 // --- Plugin ---
 
@@ -84,12 +81,6 @@ struct UnitState {
     max_speed: f32,
 }
 
-#[derive(SystemParam)]
-struct StaticObstacles<'w, 's> {
-    buildings: BuildingQuery<'w, 's>,
-    env: EnvQuery<'w, 's>,
-}
-
 // --- Constants ---
 
 mod constants {
@@ -118,11 +109,8 @@ mod constants {
 // --- Systems ---
 
 /// Incrementally syncs moving units into the spatial grid.
-fn spatial_grid_update_system(
-    mut grids: ResMut<SpatialGrids>,
-    mut units: Query<(Entity, &Transform, &CollisionRadius, &mut SpatialGridPosition), With<RTSUnit>>,
-) {
-    let live: HashSet<Entity> = units.iter().map(|(e, _, _, _)| e).collect();
+fn spatial_grid_update_system(mut grids: ResMut<SpatialGrids>, mut units: SpatiallyTrackedUnits) {
+    let live: HashSet<Entity> = units.query.iter().map(|(e, _, _, _)| e).collect();
     let stale: Vec<Entity> = grids
         .entity_grid
         .entity_positions
@@ -134,7 +122,7 @@ fn spatial_grid_update_system(
         grids.entity_grid.remove_item(entity);
     }
 
-    for (entity, transform, radius, mut grid_pos) in units.iter_mut() {
+    for (entity, transform, radius, mut grid_pos) in units.query.iter_mut() {
         let coord = GridCoord::from_world_pos(transform.translation, grids.entity_grid.cell_size);
         if grid_pos.dirty || grid_pos.last_grid_coord != Some(coord) {
             grids.entity_grid.update_entity(entity, transform.translation, radius.radius);
@@ -146,7 +134,7 @@ fn spatial_grid_update_system(
 
 /// Calculates collision avoidance for all units. Read-only — fires `CollisionAvoidanceEvent`.
 fn calc_collision_avoidance(
-    units: ReadUnitQuery,
+    units: MovingUnits,
     obstacles: StaticObstacles,
     grids: Res<SpatialGrids>,
     time: Res<Time>,
@@ -154,9 +142,9 @@ fn calc_collision_avoidance(
 ) {
     let dt = time.delta_secs().min(MAX_DELTA_TIME);
     let velocities: HashMap<Entity, Vec3> =
-        units.iter().map(|(e, _, m, _)| (e, m.current_velocity)).collect();
+        units.query.iter().map(|(e, _, m, _)| (e, m.current_velocity)).collect();
 
-    for (entity, transform, movement, radius) in units.iter() {
+    for (entity, transform, movement, radius) in units.query.iter() {
         let unit = UnitState {
             entity,
             pos: transform.translation,

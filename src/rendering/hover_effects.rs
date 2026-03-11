@@ -1,7 +1,26 @@
 use crate::core::components::*;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
-type HoverableQuery<'w, 's> = Query<'w, 's, (Entity, &'static Transform, &'static Selectable), Or<(With<RTSUnit>, With<Building>, With<ResourceSource>)>>;
+#[derive(SystemParam)]
+pub(crate) struct HoverableEntities<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), Or<(With<RTSUnit>, With<Building>, With<ResourceSource>)>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct CurrentlyHoveredEntities<'w, 's> {
+    query: Query<'w, 's, Entity, With<HoveredEntity>>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct NewlyHoveredEntities<'w, 's> {
+    query: Query<'w, 's, Entity, (With<HoveredEntity>, Without<HoverEffectApplied>)>,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct ExHoveredEntities<'w, 's> {
+    query: Query<'w, 's, Entity, (With<HoverEffectApplied>, Without<HoveredEntity>)>,
+}
 
 /// Plugin for handling model hover effects
 pub struct HoverEffectsPlugin;
@@ -37,13 +56,8 @@ pub struct HoverEffectApplied;
 pub fn hover_detection_system(
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-
-    // Query all hoverable entities (units, buildings, and resources)
-    hoverable_entities: HoverableQuery,
-
-    // Track currently hovered entities
-    currently_hovered: Query<Entity, With<HoveredEntity>>,
-
+    hoverable_entities: HoverableEntities,
+    currently_hovered: CurrentlyHoveredEntities,
     mut commands: Commands,
 ) {
     let window = windows.single();
@@ -62,7 +76,7 @@ pub fn hover_detection_system(
     let mut closest_entity = None;
     let mut closest_distance = f32::INFINITY;
 
-    for (entity, transform, selectable) in hoverable_entities.iter() {
+    for (entity, transform, selectable) in hoverable_entities.query.iter() {
         if let Some(projected_distance) = calculate_projected_distance(ray, transform.translation) {
             let distance_to_ray =
                 calculate_distance_to_ray(ray, transform.translation, projected_distance);
@@ -78,7 +92,7 @@ pub fn hover_detection_system(
     }
 
     // Remove hover from all currently hovered entities (use try_remove to avoid panics)
-    for entity in currently_hovered.iter() {
+    for entity in currently_hovered.query.iter() {
         commands.entity(entity).remove::<HoveredEntity>();
     }
 
@@ -94,15 +108,11 @@ pub fn hover_detection_system(
 pub fn apply_hover_effects(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
-
-    // Query entities that are hovered but don't have hover effects yet
-    newly_hovered: Query<Entity, (With<HoveredEntity>, Without<HoverEffectApplied>)>,
-
-    // Query to find materials in entity hierarchy
+    newly_hovered: NewlyHoveredEntities,
     material_query: Query<&MeshMaterial3d<StandardMaterial>>,
     children_query: Query<&Children>,
 ) {
-    for entity in newly_hovered.iter() {
+    for entity in newly_hovered.query.iter() {
         // Find all materials in this entity's hierarchy
         let mut material_updates = Vec::new();
         collect_material_updates_for_hover(
@@ -176,15 +186,11 @@ pub fn apply_hover_effects(
 /// System to remove hover effects from entities no longer hovered
 pub fn remove_hover_effects(
     mut commands: Commands,
-
-    // Query entities with hover effects that are no longer hovered
-    no_longer_hovered: Query<Entity, (With<HoverEffectApplied>, Without<HoveredEntity>)>,
-
-    // Query to restore original materials
+    no_longer_hovered: ExHoveredEntities,
     original_materials: Query<&OriginalMaterial>,
     children_query: Query<&Children>,
 ) {
-    for entity in no_longer_hovered.iter() {
+    for entity in no_longer_hovered.query.iter() {
         // Restore original materials in entity hierarchy
         restore_original_materials_recursive(
             entity,
@@ -199,8 +205,6 @@ pub fn remove_hover_effects(
             continue;
         };
         entity_commands.remove::<HoverEffectApplied>();
-
-
     }
 }
 
