@@ -1,6 +1,7 @@
 //! Worker goal generation — assigns idle AI workers to resource nodes.
 
 use bevy::prelude::*;
+use rand::seq::SliceRandom;
 use crate::core::components::{ResourceGatherer, ResourceSource, RTSUnit, UnitType};
 use crate::rts::resource::{GatheringState, GatheringStateType};
 use crate::core::components::ResourceType;
@@ -46,14 +47,17 @@ fn find_nearest_resource(
     pos: Vec3,
     resources: &Query<(Entity, &ResourceSource, &Transform), Without<RTSUnit>>,
 ) -> Option<(Entity, ResourceType, Vec3)> {
-    resources
+    let mut candidates: Vec<_> = resources
         .iter()
         .filter(|(_, r, _)| r.amount > 0.0)
-        .min_by(|a, b| {
-            a.2.translation
-                .distance(pos)
-                .partial_cmp(&b.2.translation.distance(pos))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(e, r, tf)| (e, r.resource_type.clone(), tf.translation))
+        .collect();
+    candidates.sort_unstable_by(|a, b| {
+        a.2.translation
+            .distance(pos)
+            .partial_cmp(&b.2.translation.distance(pos))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    candidates.truncate(5);
+    let (e, r, tf) = candidates.choose(&mut rand::thread_rng())?;
+    Some((*e, r.resource_type.clone(), tf.translation))
 }
