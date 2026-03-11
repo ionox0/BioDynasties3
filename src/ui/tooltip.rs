@@ -258,6 +258,7 @@ pub struct UnitDataQueries<'w, 's> {
     pub movement_query: Query<'w, 's, &'static Movement>,
     pub building_query: Query<'w, 's, &'static Building>,
     pub resource_source_query: Query<'w, 's, (&'static ResourceSource, &'static CollisionRadius)>,
+    pub pathfinding_query: Query<'w, 's, &'static PathfindingState>,
 }
 
 
@@ -291,10 +292,34 @@ fn build_tooltip_content(
     let player_name = player_display_name(unit, unit_state);
     let task = get_unit_task(entity, unit_data, unit_state);
 
-    let text = format!(
+    let mut text = format!(
         "{} ({})\nHealth: {:.0}/{:.0}\nTask: {}",
         entity_name, player_name, health.current, health.max, task
     );
+
+    if let Ok(gatherer) = unit_data.gatherer_query.get(entity) {
+        if let Some(target) = gatherer.target_resource {
+            text.push_str(&format!("\nTarget resource: {target:?}"));
+        }
+    }
+
+    if let Ok(movement) = unit_data.movement_query.get(entity) {
+        match movement.target_position {
+            Some(pos) => text.push_str(&format!("\nMove target: ({:.0}, {:.0}, {:.0})", pos.x, pos.y, pos.z)),
+            None => text.push_str("\nMove target: none"),
+        }
+    }
+
+    if let Ok(pf) = unit_data.pathfinding_query.get(entity) {
+        let waypoints = pf.path.len().saturating_sub(pf.path_index);
+        let failure = if pf.last_pathfinding_failure.is_finite() {
+            format!("fail@{:.1}s", pf.last_pathfinding_failure)
+        } else {
+            "ok".to_string()
+        };
+        text.push_str(&format!("\nPath: {waypoints} waypoints ({failure})"));
+    }
+
     Some((text, unit.player_id))
 }
 
