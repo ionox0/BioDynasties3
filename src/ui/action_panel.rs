@@ -38,6 +38,11 @@ pub(crate) struct ActionPanelSections<'w, 's> {
     query: Query<'w, 's, Entity, With<ActionPanelUnitsSection>>,
 }
 
+#[derive(SystemParam)]
+struct SelectedBuildingQueue<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Selectable, &'static ProductionQueue), With<Building>>,
+}
+
 // ─── Components ───────────────────────────────────────────────────────────────
 
 /// Marker for the root action bar node.
@@ -47,6 +52,10 @@ pub struct ActionPanel;
 /// Marker for the right (PRODUCE) section — rebuilt on building selection changes.
 #[derive(Component)]
 struct ActionPanelUnitsSection;
+
+/// Marker for the text node that shows the current production queue state.
+#[derive(Component)]
+struct QueueDisplay;
 
 /// Button that starts building placement mode.
 #[derive(Component, Clone)]
@@ -70,7 +79,7 @@ impl Plugin for ActionPanelPlugin {
         app.add_systems(Startup, setup_action_panel)
             .add_systems(
                 Update,
-                (handle_build_buttons, update_units_section, handle_unit_buttons).chain(),
+                (handle_build_buttons, update_units_section, handle_unit_buttons, update_queue_display).chain(),
             );
     }
 }
@@ -151,6 +160,12 @@ fn spawn_produce_section(parent: &mut ChildBuilder) {
                     flex_wrap: FlexWrap::Wrap,
                     ..default()
                 },
+            ));
+            col.spawn((
+                QueueDisplay,
+                Text::new(""),
+                TextFont { font_size: 9.0, ..default() },
+                TextColor(Color::srgb(0.6, 0.8, 0.6)),
             ));
         });
 }
@@ -241,6 +256,32 @@ fn handle_unit_buttons(
         if *interaction == Interaction::Pressed {
             queue_events.send(QueueProductionEvent { building: btn.building, unit_type: btn.unit_type.clone() });
         }
+    }
+}
+
+fn update_queue_display(
+    mut display_q: Query<&mut Text, With<QueueDisplay>>,
+    buildings: SelectedBuildingQueue,
+) {
+    let Ok(mut text) = display_q.get_single_mut() else { return };
+    let selected = buildings.query.iter().find(|(_, sel, _)| sel.is_selected);
+    if let Some((_, _, queue)) = selected {
+        *text = Text::new(format_queue(queue));
+    } else {
+        *text = Text::new("");
+    }
+}
+
+fn format_queue(queue: &ProductionQueue) -> String {
+    let Some(current) = queue.queued.first() else {
+        return "Queue: empty".to_string();
+    };
+    let pct = (queue.progress / queue.production_time * 100.0) as u32;
+    let waiting = queue.queued.len().saturating_sub(1);
+    if waiting > 0 {
+        format!("Producing: {} ({}%)  +{} waiting", unit_label(current), pct, waiting)
+    } else {
+        format!("Producing: {} ({}%)", unit_label(current), pct)
     }
 }
 
