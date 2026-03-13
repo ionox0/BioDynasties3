@@ -146,29 +146,21 @@ fn handle_production_buttons(
 
 fn production_units(building_type: &BuildingType) -> Vec<UnitType> {
     match building_type {
-        BuildingType::Queen => vec![UnitType::WorkerAnt],
-        BuildingType::Nursery => vec![
-            UnitType::DragonFly,
-            UnitType::Housefly,
-            UnitType::ScoutAnt,
-        ],
-        BuildingType::WarriorChamber => vec![
-            UnitType::BeetleKnight,
-            UnitType::SpearMantis,
-            UnitType::BatteringBeetle,
-        ],
+        BuildingType::Queen => vec![UnitType::Fourmi, UnitType::Bee],
+        BuildingType::Nursery => vec![UnitType::CairnsBirdwing, UnitType::Dragonfly],
+        BuildingType::WarriorChamber => vec![UnitType::RolyPoly, UnitType::Scorpion, UnitType::GoliathBirdeater, UnitType::RhinoBeetle],
     }
 }
 
 fn unit_label(unit_type: &UnitType) -> &'static str {
     match unit_type {
-        UnitType::WorkerAnt => "Worker\nAnt",
-        UnitType::DragonFly => "Dragon\nFly",
-        UnitType::Housefly => "House\nFly",
-        UnitType::ScoutAnt => "Scout\nAnt",
-        UnitType::BeetleKnight => "Beetle\nKnight",
-        UnitType::SpearMantis => "Spear\nMantis",
-        UnitType::BatteringBeetle => "Battering\nBeetle",
-        _ => "Unit",
+        UnitType::Fourmi => "Fourmi",
+        UnitType::Bee => "Bee",
+        UnitType::CairnsBirdwing => "Cairns\nBirdwing",
+        UnitType::Dragonfly => "Dragonfly",
+        UnitType::RolyPoly => "Roly\nPoly",
+        UnitType::Scorpion => "Scorpion",
+        UnitType::GoliathBirdeater => "Goliath\nBirdeater",
+        UnitType::RhinoBeetle => "Rhino\nBeetle",
     }
 }

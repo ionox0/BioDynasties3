@@ -67,54 +67,7 @@ pub struct UnitStatsConfig {
     pub collision_radius: f32,
 }
 
-// ─── Named constants for specific units ─────────────────────────────────────
-
-/// Spear Mantis — elite DPS (150 cost).
-#[allow(dead_code)]
-pub const SPEAR_MANTIS_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 110.0, max: 110.0, armor: 1.0, regeneration_rate: 0.5 },
-    combat: CombatStats {
-        attack_damage: 40.0,
-        attack_range: 13.0,
-        attack_speed: 1.6,
-        attack_type: AttackType::Melee,
-        auto_attack: false,
-    },
-    movement: MovementStats { max_speed: 88.0 },
-    collision_radius: crate::core::constants::collision::DEFAULT_UNIT_COLLISION_RADIUS,
-};
-
-/// Scout Ant — fast reconnaissance (80 cost).
-#[allow(dead_code)]
-pub const SCOUT_ANT_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 65.0, max: 65.0, armor: 0.0, regeneration_rate: 0.3 },
-    combat: CombatStats {
-        attack_damage: 15.0,
-        attack_range: 13.0,
-        attack_speed: 2.5,
-        attack_type: AttackType::Melee,
-        auto_attack: false,
-    },
-    movement: MovementStats { max_speed: 128.0 },
-    collision_radius: crate::core::constants::collision::DEFAULT_UNIT_COLLISION_RADIUS,
-};
-
-/// Beetle Knight — heavy tank (180 cost).
-#[allow(dead_code)]
-pub const BEETLE_KNIGHT_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 280.0, max: 280.0, armor: 4.0, regeneration_rate: 0.2 },
-    combat: CombatStats {
-        attack_damage: 25.0,
-        attack_range: 11.0,
-        attack_speed: 1.2,
-        attack_type: AttackType::Melee,
-        auto_attack: false,
-    },
-    movement: MovementStats { max_speed: 56.0 },
-    collision_radius: crate::core::constants::collision::BEETLE_KNIGHT_COLLISION_RADIUS,
-};
-
-/// DragonFly — ultimate elite unit (450 cost).
+/// Dragonfly — ultimate elite flying unit.
 pub const DRAGONFLY_STATS: UnitStatsConfig = UnitStatsConfig {
     health: HealthStats { current: 300.0, max: 300.0, armor: 3.0, regeneration_rate: 0.8 },
     combat: CombatStats {
@@ -128,48 +81,6 @@ pub const DRAGONFLY_STATS: UnitStatsConfig = UnitStatsConfig {
     collision_radius: 3.0,
 };
 
-/// Mites — ultra-cheap swarm unit (8 cost).
-pub const MITES_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 15.0, max: 15.0, armor: 0.0, regeneration_rate: 0.0 },
-    combat: CombatStats {
-        attack_damage: 3.0,
-        attack_range: 8.0,
-        attack_speed: 1.0,
-        attack_type: AttackType::Melee,
-        auto_attack: false,
-    },
-    movement: MovementStats { max_speed: 80.0 },
-    collision_radius: crate::core::constants::collision::DEFAULT_UNIT_COLLISION_RADIUS,
-};
-
-/// Ticks — ultra-cheap siege unit (12 cost).
-pub const TICKS_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 25.0, max: 25.0, armor: 1.0, regeneration_rate: 0.0 },
-    combat: CombatStats {
-        attack_damage: 8.0,
-        attack_range: 10.0,
-        attack_speed: 0.8,
-        attack_type: AttackType::Siege,
-        auto_attack: false,
-    },
-    movement: MovementStats { max_speed: 48.0 },
-    collision_radius: crate::core::constants::collision::DEFAULT_UNIT_COLLISION_RADIUS,
-};
-
-/// Housefly — enhanced fast DPS unit.
-pub const HOUSEFLY_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 90.0, max: 90.0, armor: 0.5, regeneration_rate: 0.3 },
-    combat: CombatStats {
-        attack_damage: 28.0,
-        attack_range: 13.0,
-        attack_speed: 1.0,
-        attack_type: AttackType::Melee,
-        auto_attack: false,
-    },
-    movement: MovementStats { max_speed: 96.0 },
-    collision_radius: crate::core::constants::collision::DEFAULT_UNIT_COLLISION_RADIUS,
-};
-
 // ─── Dynamic generation ───────────────────────────────────────────────────────
 
 fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
@@ -178,9 +89,8 @@ fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
     let base = role_stats.get(&role).unwrap();
 
     let collision_radius = match unit_type {
-        UnitType::WorkerAnt => crate::core::constants::collision::WORKER_ANT_COLLISION_RADIUS,
-        UnitType::BeetleKnight => crate::core::constants::collision::BEETLE_KNIGHT_COLLISION_RADIUS,
-        UnitType::DragonFly => 3.0,
+        UnitType::Fourmi => crate::core::constants::collision::WORKER_ANT_COLLISION_RADIUS,
+        UnitType::RolyPoly => crate::core::constants::collision::BEETLE_KNIGHT_COLLISION_RADIUS,
         _ => crate::core::constants::collision::DEFAULT_UNIT_COLLISION_RADIUS,
     };
 
@@ -217,45 +127,11 @@ fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
 
 fn get_unit_role(unit_type: &UnitType) -> UnitRole {
     match unit_type {
-        UnitType::WorkerAnt | UnitType::TermiteWorker | UnitType::Honeybees => UnitRole::Economic,
-
-        UnitType::BeetleKnight
-        | UnitType::WolfSpider
-        | UnitType::Scorpion
-        | UnitType::TermiteWarrior
-        | UnitType::DefenderBug
-        | UnitType::StagBeetle
-        | UnitType::RhinoBeetle
-        | UnitType::Woodlouse
-        | UnitType::Tarantula
-        | UnitType::EliteSpider
-        | UnitType::SpearMantis
-        | UnitType::Housefly
-        | UnitType::OrchidMantis
-        | UnitType::WidowSpider
-        | UnitType::Hornets
-        | UnitType::Earwigs
-        | UnitType::StickBugs
-        | UnitType::JewelBug => UnitRole::Dps,
-
-        UnitType::ScoutAnt
-        | UnitType::Aphids
-        | UnitType::Mites
-        | UnitType::Firefly
-        | UnitType::DragonFlies => UnitRole::Scout,
-
-        UnitType::BatteringBeetle
-        | UnitType::Stinkbug
-        | UnitType::SandFleas
-        | UnitType::Ticks
-        | UnitType::Fleas
-        | UnitType::Lice => UnitRole::Siege,
-
-        UnitType::DragonFly
-        | UnitType::Moths
-        | UnitType::Caterpillars
-        | UnitType::PeacockMoth
-        | UnitType::Cicadas => UnitRole::Elite,
+        UnitType::Fourmi | UnitType::Bee => UnitRole::Economic,
+        UnitType::CairnsBirdwing => UnitRole::Scout,
+        UnitType::Dragonfly | UnitType::GoliathBirdeater => UnitRole::Elite,
+        UnitType::RolyPoly | UnitType::RhinoBeetle => UnitRole::Tank,
+        UnitType::Scorpion => UnitRole::Dps,
     }
 }
 
@@ -311,10 +187,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
 /// Returns the complete stats configuration for a given unit type.
 pub fn get_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
     match unit_type {
-        UnitType::DragonFly => DRAGONFLY_STATS,
-        UnitType::Mites => MITES_STATS,
-        UnitType::Ticks => TICKS_STATS,
-        UnitType::Housefly => HOUSEFLY_STATS,
+        UnitType::Dragonfly => DRAGONFLY_STATS,
         _ => generate_unit_stats(unit_type),
     }
 }

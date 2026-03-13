@@ -22,10 +22,11 @@ impl EntityFactory {
         let stats = unit_stats::get_unit_stats(&unit_type);
         let model_path = unit_model_path(&unit_type);
         let scale = unit_model_scale(&unit_type);
+        let rotation = unit_model_rotation(&unit_type);
 
         let mut entity = commands.spawn((
             SceneRoot(asset_server.load(model_path)),
-            Transform::from_translation(position).with_scale(Vec3::splat(scale)),
+            Transform::from_translation(position).with_rotation(rotation).with_scale(Vec3::splat(scale)),
             RTSUnit { player_id, unit_type: Some(unit_type.clone()) },
             Position { translation: position },
             Movement {
@@ -113,37 +114,16 @@ impl EntityFactory {
 
 fn add_gatherer_if_needed(entity: &mut EntityCommands, unit_type: &UnitType) {
     let gatherer = match unit_type {
-        UnitType::WorkerAnt | UnitType::TermiteWorker => Some(ResourceGatherer {
+        UnitType::Fourmi => Some(ResourceGatherer {
             gather_rate: 10.0,
             capacity: 10.0,
             carried_amount: 0.0,
             resource_type: None,
             target_resource: None,
         }),
-        UnitType::Honeybees => Some(ResourceGatherer {
+        UnitType::Bee => Some(ResourceGatherer {
             gather_rate: 15.0,
             capacity: 3.0,
-            carried_amount: 0.0,
-            resource_type: None,
-            target_resource: None,
-        }),
-        UnitType::Aphids => Some(ResourceGatherer {
-            gather_rate: 6.0,
-            capacity: 2.0,
-            carried_amount: 0.0,
-            resource_type: None,
-            target_resource: None,
-        }),
-        UnitType::Mites => Some(ResourceGatherer {
-            gather_rate: 12.0,
-            capacity: 4.0,
-            carried_amount: 0.0,
-            resource_type: None,
-            target_resource: None,
-        }),
-        UnitType::Woodlouse => Some(ResourceGatherer {
-            gather_rate: 7.0,
-            capacity: 3.5,
             carried_amount: 0.0,
             resource_type: None,
             target_resource: None,
@@ -196,16 +176,14 @@ fn building_stats(building_type: &BuildingType) -> BuildingConfig {
 
 fn unit_model_path(unit_type: &UnitType) -> &'static str {
     match unit_type {
-        UnitType::WorkerAnt => "models/insects/fourmi.glb#Scene0",
-        UnitType::ScoutAnt => "models/insects/cairns_birdwing.glb#Scene0",
-        UnitType::BeetleKnight => "models/insects/rhino_beetle.glb#Scene0",
-        UnitType::SpearMantis => "models/insects/queen_faced_bug.glb#Scene0",
-        UnitType::DragonFly => "models/insects/dragonfly.glb#Scene0",
-        UnitType::BatteringBeetle => "models/insects/black_ox_beetle_small.glb#Scene0",
-        UnitType::Stinkbug => "models/insects/stinkbug.glb#Scene0",
-        UnitType::Housefly => "models/insects/housefly.glb#Scene0",
-        UnitType::TermiteWorker => "models/insects/fourmi.glb#Scene0",
-        _ => "models/insects/fourmi.glb#Scene0",
+        UnitType::Fourmi => "models/insects/good/fourmi.glb#Scene0",
+        UnitType::Bee => "models/insects/good/bee.glb#Scene0",
+        UnitType::CairnsBirdwing => "models/insects/good/cairns_birdwing.glb#Scene0",
+        UnitType::Dragonfly => "models/insects/good/dragonfly.glb#Scene0",
+        UnitType::RolyPoly => "models/insects/good/roly_poly.glb#Scene0",
+        UnitType::Scorpion => "models/insects/good/scorpion.glb#Scene0",
+        UnitType::GoliathBirdeater => "models/insects/good/goliath_birdeater.glb#Scene0",
+        UnitType::RhinoBeetle => "models/insects/good/rhino_beetle.glb#Scene0",
     }
 }
 
@@ -217,12 +195,21 @@ fn building_model_path(building_type: &BuildingType) -> &'static str {
     }
 }
 
+fn unit_model_rotation(unit_type: &UnitType) -> Quat {
+    match unit_type {
+        UnitType::Dragonfly => Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        _ => Quat::IDENTITY,
+    }
+}
+
 fn unit_model_scale(unit_type: &UnitType) -> f32 {
     match unit_type {
-        UnitType::WorkerAnt | UnitType::TermiteWorker => 3.75,
-        UnitType::ScoutAnt => 3.75,
-        UnitType::BeetleKnight => 8.0,
-        UnitType::DragonFly => 5.0,
-        _ => 15.0,
+        UnitType::Fourmi | UnitType::Bee => 3.75,
+        UnitType::CairnsBirdwing => 18.75,
+        UnitType::Dragonfly => 100.0,
+        UnitType::RolyPoly => 0.3,
+        UnitType::Scorpion => 20.0,
+        UnitType::GoliathBirdeater => 1.5,
+        UnitType::RhinoBeetle => 10.0,
     }
 }

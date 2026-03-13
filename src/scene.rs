@@ -57,7 +57,7 @@ fn spawn_player_base(
     for offset in worker_offsets {
         let wp = base_pos + offset;
         let wy = terrain.get_height(wp.x, wp.z) + 1.0;
-        EntityFactory::spawn_unit(&mut commands, &asset_server, UnitType::WorkerAnt, Vec3::new(wp.x, wy, wp.z), 1);
+        EntityFactory::spawn_unit(&mut commands, &asset_server, UnitType::Fourmi, Vec3::new(wp.x, wy, wp.z), 1);
     }
 }
 

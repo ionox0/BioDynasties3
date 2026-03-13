@@ -142,15 +142,7 @@ fn derive_animation_state(
 fn is_flying_unit(unit_type: &UnitType) -> bool {
     matches!(
         unit_type,
-        UnitType::DragonFly
-            | UnitType::Housefly
-            | UnitType::Moths
-            | UnitType::Hornets
-            | UnitType::Honeybees
-            | UnitType::Firefly
-            | UnitType::DragonFlies
-            | UnitType::ScoutAnt
-            | UnitType::PeacockMoth
+        UnitType::Dragonfly | UnitType::CairnsBirdwing | UnitType::Bee
     )
 }
 
@@ -158,9 +150,7 @@ fn is_flying_unit(unit_type: &UnitType) -> bool {
 fn get_animation_name(unit_type: &crate::core::components::UnitType, animation_state: &AnimationState) -> String {
     use crate::core::components::UnitType;
     match (unit_type, animation_state) {
-        // Bees use bee_hover when moving (Special state for flying units)
-        (UnitType::Honeybees, AnimationState::Special) => "bee_hover".to_string(),
-        // Default to Animation0 for most cases
+        (UnitType::Bee, AnimationState::Special) => "bee_hover".to_string(),
         _ => "Animation0".to_string(),
     }
 }
@@ -171,13 +161,11 @@ fn get_animations_for_unit(unit_type: &Option<crate::core::components::UnitType>
 
     if let Some(unit_type) = unit_type {
         match unit_type {
-            UnitType::Honeybees => vec![
-                "bee_hover".to_string(),  // Specific hover animation for bees
-                "Animation0".to_string(), // Fallback default animation
+            UnitType::Bee => vec![
+                "bee_hover".to_string(),
+                "Animation0".to_string(),
             ],
-            _ => vec![
-                "Animation0".to_string(), // Default animation for most units
-            ],
+            _ => vec!["Animation0".to_string()],
         }
     } else {
         vec!["Animation0".to_string()]

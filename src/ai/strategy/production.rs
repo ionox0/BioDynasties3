@@ -20,7 +20,7 @@ pub fn production_goal_system(
         if *player_id < 2 {
             continue;
         }
-        let unit_type = UnitType::WorkerAnt;
+        let unit_type = UnitType::Fourmi;
         if stockpile.nectar < unit_type.build_cost_nectar() {
             continue;
         }

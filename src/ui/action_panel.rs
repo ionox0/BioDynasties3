@@ -289,21 +289,21 @@ fn format_queue(queue: &ProductionQueue) -> String {
 
 fn production_units(building_type: &BuildingType) -> Vec<UnitType> {
     match building_type {
-        BuildingType::Queen => vec![UnitType::WorkerAnt],
-        BuildingType::Nursery => vec![UnitType::DragonFly, UnitType::Housefly, UnitType::ScoutAnt],
-        BuildingType::WarriorChamber => vec![UnitType::BeetleKnight, UnitType::SpearMantis, UnitType::BatteringBeetle],
+        BuildingType::Queen => vec![UnitType::Fourmi, UnitType::Bee],
+        BuildingType::Nursery => vec![UnitType::CairnsBirdwing, UnitType::Dragonfly],
+        BuildingType::WarriorChamber => vec![UnitType::RolyPoly, UnitType::Scorpion, UnitType::GoliathBirdeater, UnitType::RhinoBeetle],
     }
 }
 
 fn unit_label(unit_type: &UnitType) -> &'static str {
     match unit_type {
-        UnitType::WorkerAnt => "Worker Ant",
-        UnitType::DragonFly => "DragonFly",
-        UnitType::Housefly => "Housefly",
-        UnitType::ScoutAnt => "Scout Ant",
-        UnitType::BeetleKnight => "Beetle Knight",
-        UnitType::SpearMantis => "Spear Mantis",
-        UnitType::BatteringBeetle => "Battering Beetle",
-        _ => "Unit",
+        UnitType::Fourmi => "Fourmi",
+        UnitType::Bee => "Bee",
+        UnitType::CairnsBirdwing => "Cairns Birdwing",
+        UnitType::Dragonfly => "Dragonfly",
+        UnitType::RolyPoly => "Roly Poly",
+        UnitType::Scorpion => "Scorpion",
+        UnitType::GoliathBirdeater => "Goliath Birdeater",
+        UnitType::RhinoBeetle => "Rhino Beetle",
     }
 }

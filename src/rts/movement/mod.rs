@@ -185,10 +185,14 @@ fn update_rotation(tf: &mut Transform, dir: Vec3, rts_unit: &RTSUnit, dt: f32) {
     if dir.length_squared() <= mc::DIRECTION_THRESHOLD * mc::DIRECTION_THRESHOLD {
         return;
     }
-    // Ant/butterfly GLBs face backward — negate the formula to compensate.
+    // Fourmi/CairnsBirdwing GLBs face backward — negate the formula to compensate.
+    // Dragonfly GLB is rotated 90° CCW from the forward direction.
     let target_rot = match rts_unit.unit_type.as_ref() {
-        Some(UnitType::WorkerAnt | UnitType::ScoutAnt) => {
+        Some(UnitType::Fourmi | UnitType::CairnsBirdwing) => {
             Quat::from_rotation_y(-dir.x.atan2(-dir.z))
+        }
+        Some(UnitType::Dragonfly) => {
+            Quat::from_rotation_y(dir.x.atan2(dir.z) + std::f32::consts::FRAC_PI_2)
         }
         _ => Quat::from_rotation_y(dir.x.atan2(dir.z)),
     };

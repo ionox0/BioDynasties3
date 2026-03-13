@@ -86,10 +86,12 @@ fn phase_config(military_count: u32) -> (&'static [u32], f32) {
 
 fn early_military_roster() -> Vec<UnitType> {
     vec![
-        UnitType::SpearMantis,
-        UnitType::BeetleKnight,
-        UnitType::ScoutAnt,
-        UnitType::BatteringBeetle,
+        UnitType::Scorpion,
+        UnitType::RolyPoly,
+        UnitType::GoliathBirdeater,
+        UnitType::RhinoBeetle,
+        UnitType::CairnsBirdwing,
+        UnitType::Dragonfly,
     ]
 }
 
