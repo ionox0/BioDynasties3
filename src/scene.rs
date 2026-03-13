@@ -3,6 +3,7 @@ use crate::core::components::*;
 use crate::core::constants::{camera, movement};
 use crate::core::resources::{Stockpile, Stockpiles};
 use crate::entities::entity_factory::EntityFactory;
+use crate::entities::prop_factory::{PropFactory, PropType};
 use crate::world::static_terrain::{StaticTerrainHeights, ROCKY_TERRAIN_HEIGHT_THRESHOLD};
 
 const INITIAL_CAMERA_HEIGHT: f32 = 400.0;
@@ -15,7 +16,7 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_scene, spawn_player_base, scatter_map_resources))
+        app.add_systems(Startup, (setup_scene, spawn_player_base, scatter_map_resources, scatter_map_props))
             .add_systems(Update, handle_rts_camera_input);
     }
 }
@@ -120,6 +121,49 @@ fn resource_type_for_index(_i: usize) -> ResourceType {
 
 fn resource_amount(_rt: &ResourceType) -> f32 {
     800.0
+}
+
+// ─── Prop scatter ────────────────────────────────────────────────────────────
+
+/// Scatters 80 decorative props across the map using a deterministic LCG.
+fn scatter_map_props(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    terrain: Res<StaticTerrainHeights>,
+) {
+    const TOTAL: usize = 27;
+    const MIN_SPACING: f32 = 150.0;
+    const MIN_FROM_BASE: f32 = 250.0;
+    const EXTENT: f32 = 2550.0;
+
+    let prop_types = [
+        PropType::Mushrooms,
+        PropType::SmallRocks,
+        PropType::TermiteMoundSmall,
+        PropType::WoodStick,
+    ];
+    let base_xz = [Vec2::new(-EXTENT, 0.0), Vec2::new(EXTENT, 0.0)];
+    let mut positions: Vec<Vec3> = Vec::with_capacity(TOTAL);
+    let mut seed = 0xC0FFEE42u64;
+
+    while positions.len() < TOTAL {
+        let x = (lcg_next(&mut seed) * 2.0 - 1.0) * EXTENT;
+        let z = (lcg_next(&mut seed) * 2.0 - 1.0) * EXTENT;
+        let y = terrain.get_height(x, z);
+
+        if y > ROCKY_TERRAIN_HEIGHT_THRESHOLD { continue; }
+
+        let flat = Vec2::new(x, z);
+        if base_xz.iter().any(|b| b.distance(flat) < MIN_FROM_BASE) { continue; }
+        if positions.iter().any(|p| Vec2::new(p.x, p.z).distance(flat) < MIN_SPACING) { continue; }
+
+        positions.push(Vec3::new(x, y, z));
+    }
+
+    for (i, pos) in positions.into_iter().enumerate() {
+        let prop_type = prop_types[i % prop_types.len()];
+        PropFactory::spawn_prop(&mut commands, &asset_server, prop_type, pos);
+    }
 }
 
 // ─── Camera setup & input ────────────────────────────────────────────────────
