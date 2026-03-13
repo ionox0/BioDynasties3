@@ -131,7 +131,7 @@ fn scatter_map_props(
     asset_server: Res<AssetServer>,
     terrain: Res<StaticTerrainHeights>,
 ) {
-    const TOTAL: usize = 27;
+    const TOTAL: usize = 12;
     const MIN_SPACING: f32 = 150.0;
     const MIN_FROM_BASE: f32 = 250.0;
     const EXTENT: f32 = 2550.0;

@@ -209,10 +209,10 @@ pub mod buildings {
 // === RESOURCE SYSTEM ===
 pub mod resources {
     // Starting resources (balanced to match AI starting resources)
-    pub const STARTING_NECTAR: f32 = 200.0;
-    pub const STARTING_CHITIN: f32 = 60.0;
-    pub const STARTING_MINERALS: f32 = 30.0;
-    pub const STARTING_PHEROMONES: f32 = 90.0;
+    pub const STARTING_NECTAR: f32 = 10_000.0;
+    pub const STARTING_CHITIN: f32 = 10_000.0;
+    pub const STARTING_MINERALS: f32 = 10_000.0;
+    pub const STARTING_PHEROMONES: f32 = 10_000.0;
     pub const STARTING_POPULATION_LIMIT: u32 = 200;
 
     // Resource costs for buildings (using new theme)
