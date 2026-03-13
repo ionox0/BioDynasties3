@@ -75,7 +75,7 @@ pub const DRAGONFLY_STATS: UnitStatsConfig = UnitStatsConfig {
         attack_range: 22.0,
         attack_speed: 1.5,
         attack_type: AttackType::Melee,
-        auto_attack: false,
+        auto_attack: true,
     },
     movement: MovementStats { max_speed: 160.0 },
     collision_radius: 3.0,

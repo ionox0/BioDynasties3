@@ -86,8 +86,9 @@ mod cc {
     pub const REGEN_DELAY: f32 = 5.0;
     pub const ATTACK_RANGE_MARGIN: f32 = 0.8;
     pub const TARGET_POSITION_RATIO: f32 = 0.7;
-    pub const GRID_CELL_SIZE: f32 = 100.0;
+    pub const GRID_CELL_SIZE: f32 = 150.0;
     pub const VISION_RANGE: f32 = 120.0;
+    pub const MOVE_RETARGET_THRESHOLD_RATIO: f32 = 1.0;
 }
 
 // ─── Spatial target grid ─────────────────────────────────────────────────────
@@ -177,6 +178,7 @@ fn combat_stop_handler(
         combat.target = None;
         combat.is_attacking = false;
         combat.auto_attack = false;
+        combat.move_dest = None;
         stop_move.send(StopMovementEvent { entity: ev.entity });
     }
 }
@@ -231,14 +233,16 @@ fn combat_execution_system(
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (attacker, mut combat, atf, unit, acol) in attackers.query.iter_mut() {
+    for (attacker, mut combat, atf, _unit, acol) in attackers.query.iter_mut() {
         let Some(target) = combat.target else {
             combat.is_attacking = false;
+            combat.move_dest = None;
             continue;
         };
         let Ok((ttf, tcol)) = targets.query.get(target) else {
             combat.target = None;
             combat.is_attacking = false;
+            combat.move_dest = None;
             continue;
         };
 
@@ -247,13 +251,18 @@ fn combat_execution_system(
         if edge_dist > combat.attack_range * cc::ATTACK_RANGE_MARGIN {
             let dir = (ttf.translation - atf.translation).normalize();
             let dest = ttf.translation - dir * (combat.attack_range * cc::TARGET_POSITION_RATIO);
-            if unit.player_id != 1 || edge_dist < combat.attack_range * 2.0 {
+            let needs_move = combat.move_dest.map_or(true, |prev| {
+                prev.distance(dest) > combat.attack_range * cc::MOVE_RETARGET_THRESHOLD_RATIO
+            });
+            if needs_move {
                 move_events.send(MovementTargetEvent { entity: attacker, target_position: dest });
+                combat.move_dest = Some(dest);
             }
             combat.is_attacking = false;
         } else {
             // In effective range: stop and attack.
             stop_events.send(StopMovementEvent { entity: attacker });
+            combat.move_dest = None;
             if now - combat.last_attack_time >= combat.attack_cooldown {
                 combat.last_attack_time = now;
                 combat.is_attacking = true;

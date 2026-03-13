@@ -54,6 +54,7 @@ impl EntityFactory {
                 attack_type: stats.combat.attack_type,
                 is_attacking: false,
                 auto_attack: stats.combat.auto_attack,
+                move_dest: None,
             },
         ));
 
