@@ -5,7 +5,7 @@
 //! Outputs: `UnitArrivedEvent` (fired when a unit exhausts its path)
 //!
 //! System order each Update frame:
-//!   apply_movement_targets → stop_unit_movement → request_paths → poll_path_tasks → move_units → sync_position_component
+//!   stop_unit_movement → apply_movement_targets → request_paths → poll_path_tasks → move_units → sync_position_component
 
 pub mod events;
 pub mod formation;
@@ -34,8 +34,8 @@ impl Plugin for MovementPlugin {
                 Update,
                 (
                     add_stuck_detection,
-                    apply_movement_targets,
                     stop_unit_movement,
+                    apply_movement_targets,
                     request_paths,
                     poll_path_tasks,
                     move_units,

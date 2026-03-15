@@ -11,23 +11,26 @@ use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::resource_interaction::RESOURCE_CLICK_RADIUS;
 use crate::core::constants::ui::*;
+use crate::rts::combat::events::CombatStopEvent;
 use crate::rts::resource::events::SetTargetResourceEvent;
-use super::events::MovementTargetEvent;
+use super::events::{MovementTargetEvent, UnitArrivedEvent};
 
 pub struct UnitCommandsPlugin;
 
 impl Plugin for UnitCommandsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, right_click_command);
+        app.add_systems(Update, (right_click_command, clear_move_activity_on_arrival));
     }
 }
 
 #[derive(SystemParam)]
 struct CommandTargets<'w, 's> {
-    selectables: Query<'w, 's, (Entity, &'static Selectable, Option<&'static ResourceGatherer>), With<RTSUnit>>,
+    selectables: Query<'w, 's, (Entity, &'static Selectable, Option<&'static ResourceGatherer>, Option<&'static Combat>), With<RTSUnit>>,
     resources: Query<'w, 's, (Entity, &'static Transform, &'static ResourceSource)>,
     move_events: EventWriter<'w, MovementTargetEvent>,
     set_target_events: EventWriter<'w, SetTargetResourceEvent>,
+    combat_stop_events: EventWriter<'w, CombatStopEvent>,
+    commands: Commands<'w, 's>,
 }
 
 /// Issues move orders (and optional gather orders) to all selected units on right-click.
@@ -65,18 +68,24 @@ fn right_click_command(
         .map(|(_, pos, _)| *pos)
         .unwrap_or(ground_pos);
 
-    for (entity, selectable, gatherer_opt) in targets.selectables.iter() {
-        if !selectable.is_selected {
-            continue;
+    let selected: Vec<(Entity, bool, bool)> = targets.selectables.iter()
+        .filter(|(_, sel, _, _)| sel.is_selected)
+        .map(|(entity, _, gatherer, combat)| (entity, gatherer.is_some(), combat.is_some()))
+        .collect();
+
+    for (entity, has_gatherer, has_combat) in selected {
+        if has_gatherer {
+            if let Some((resource_entity, _, resource_type)) = &resource_click {
+                targets.set_target_events.send(SetTargetResourceEvent {
+                    gatherer: entity,
+                    target_resource: *resource_entity,
+                    resource_type: resource_type.clone(),
+                });
+            }
         }
-        if let (Some((resource_entity, _, resource_type)), Some(_)) =
-            (&resource_click, &gatherer_opt)
-        {
-            targets.set_target_events.send(SetTargetResourceEvent {
-                gatherer: entity,
-                target_resource: *resource_entity,
-                resource_type: resource_type.clone(),
-            });
+        targets.commands.entity(entity).insert(UnitState::Moving);
+        if has_combat {
+            targets.combat_stop_events.send(CombatStopEvent { entity });
         }
         targets.move_events.send(MovementTargetEvent { entity, target_position: destination });
     }
@@ -107,6 +116,19 @@ fn ray_ground_intersection(ray: Ray3d) -> Option<Vec3> {
         return None;
     }
     Some(ray.origin + *ray.direction * t)
+}
+
+/// Clears `UnitState::Moving` when a unit reaches its destination.
+fn clear_move_activity_on_arrival(
+    mut commands: Commands,
+    mut arrived: EventReader<UnitArrivedEvent>,
+    activity_q: Query<&UnitState>,
+) {
+    for ev in arrived.read() {
+        if activity_q.get(ev.entity).is_ok_and(|a| *a == UnitState::Moving) {
+            commands.entity(ev.entity).insert(UnitState::Idle);
+        }
+    }
 }
 
 fn is_click_in_game_area(cursor_pos: Vec2, window: &Window) -> bool {

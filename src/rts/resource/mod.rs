@@ -7,11 +7,11 @@ use bevy::prelude::*;
 use self::events::*;
 use self::gathering::gathering_system;
 
-/// Derived state for a gathering unit. Recomputed every frame — never set directly.
+/// Supplementary state for a gathering unit (timing fields only).
+/// Top-level activity is tracked via `UnitState`.
 // Owned by: ResourceStatePlugin (update_gathering_states)
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct GatheringState {
-    pub state: GatheringStateType,
     pub return_building: Option<Entity>,
     pub gather_start_time: f32,
     pub last_state_change: f32,
@@ -20,26 +20,11 @@ pub struct GatheringState {
 impl Default for GatheringState {
     fn default() -> Self {
         Self {
-            state: GatheringStateType::Idle,
             return_building: None,
             gather_start_time: 0.0,
             last_state_change: 0.0,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum GatheringStateType {
-    /// Unit is idle, waiting for work assignment
-    Idle,
-    /// Moving to a resource to start gathering
-    MovingToResource,
-    /// Actively gathering from a resource
-    Gathering,
-    /// Moving back to base with gathered resources
-    ReturningToBase,
-    /// Delivering resources to a building
-    DeliveringResources,
 }
 
 pub struct ResourceStatePlugin;
@@ -64,13 +49,13 @@ impl Plugin for ResourceStatePlugin {
     }
 }
 
-/// Inserts `GatheringState` on newly spawned gatherers.
+/// Inserts `GatheringState` and `UnitState::Idle` on newly spawned gatherers.
 fn add_gathering_state_to_gatherers(
     mut commands: Commands,
     new_gatherers: Query<Entity, Added<ResourceGatherer>>,
 ) {
     for entity in new_gatherers.iter() {
-        commands.entity(entity).insert(GatheringState::default());
+        commands.entity(entity).insert((GatheringState::default(), UnitState::Idle));
     }
 }
 
@@ -123,45 +108,59 @@ pub fn resource_state_system(
     }
 }
 
-/// Derives `GatheringState` from `ResourceGatherer` each frame.
-/// Sole writer of `GatheringState`.
+/// Derives `UnitState` from `ResourceGatherer` each frame.
+/// Sole gathering-domain writer of `UnitState`. Skips if `UnitState` is a combat or Moving variant.
 fn update_gathering_states(
-    mut query: Query<(&mut GatheringState, &ResourceGatherer, Option<&Movement>)>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut GatheringState, &ResourceGatherer, Option<&Movement>, &UnitState), Without<Dying>>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (mut state, gatherer, movement) in query.iter_mut() {
+    for (entity, mut gs, gatherer, movement, current_state) in query.iter_mut() {
+        if is_combat_or_moving_state(current_state) {
+            continue;
+        }
         let new_state = derive_gathering_state(gatherer, movement);
-        if new_state != state.state {
-            state.state = new_state;
-            state.last_state_change = now;
+        if new_state != *current_state {
+            gs.last_state_change = now;
+            commands.entity(entity).insert(new_state);
         }
     }
+}
+
+fn is_combat_or_moving_state(state: &UnitState) -> bool {
+    matches!(
+        state,
+        UnitState::Moving
+            | UnitState::InCombat
+            | UnitState::MovingToAttack
+            | UnitState::MovingToCombat
+    )
 }
 
 fn derive_gathering_state(
     gatherer: &ResourceGatherer,
     movement: Option<&Movement>,
-) -> GatheringStateType {
+) -> UnitState {
     let is_moving = movement.is_some_and(|m| m.target_position.is_some());
 
     if gatherer.carried_amount > 0.0
         && (gatherer.carried_amount >= gatherer.capacity || gatherer.target_resource.is_none())
     {
         return if is_moving {
-            GatheringStateType::ReturningToBase
+            UnitState::ReturningToBase
         } else {
-            GatheringStateType::DeliveringResources
+            UnitState::DeliveringResources
         };
     }
 
     if gatherer.target_resource.is_some() {
         return if is_moving {
-            GatheringStateType::MovingToResource
+            UnitState::MovingToResource
         } else {
-            GatheringStateType::Gathering
+            UnitState::Gathering
         };
     }
 
-    GatheringStateType::Idle
+    UnitState::Idle
 }

@@ -3,8 +3,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
-use crate::core::components::{ResourceGatherer, ResourceSource, RTSUnit, UnitType};
-use crate::rts::resource::{GatheringState, GatheringStateType};
+use crate::core::components::{ResourceGatherer, ResourceSource, RTSUnit, UnitState, UnitType};
 use crate::core::components::ResourceType;
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
@@ -12,7 +11,7 @@ const WORKER_ASSIGNMENT_PRIORITY: f32 = 10.0;
 
 #[derive(SystemParam)]
 pub(crate) struct IdleWorkers<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static RTSUnit, &'static GatheringState, &'static Transform), With<ResourceGatherer>>,
+    query: Query<'w, 's, (Entity, &'static RTSUnit, &'static UnitState, &'static Transform), With<ResourceGatherer>>,
 }
 
 #[derive(SystemParam)]
@@ -33,7 +32,7 @@ pub fn worker_goal_system(
         if !unit.unit_type.as_ref().is_some_and(UnitType::is_worker) {
             continue;
         }
-        if state.state != GatheringStateType::Idle {
+        if *state != UnitState::Idle {
             continue;
         }
         let Some((resource_entity, resource_type, resource_pos)) =

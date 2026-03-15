@@ -57,7 +57,7 @@ pub(crate) struct CombatTargets<'w, 's> {
 
 #[derive(SystemParam)]
 pub(crate) struct CombatUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit)>,
+    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, Option<&'static UnitState>)>,
 }
 
 #[derive(SystemParam)]
@@ -72,7 +72,7 @@ pub(crate) struct HealthyUnits<'w, 's> {
 
 #[derive(SystemParam)]
 pub(crate) struct CombatStateUnits<'w, 's> {
-    query: Query<'w, 's, (&'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>)>,
+    query: Query<'w, 's, (Entity, &'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>, &'static UnitState), Without<Dying>>,
 }
 
 #[derive(SystemParam)]
@@ -199,13 +199,18 @@ fn target_management_system(
         target_grid.0.update_item(entity, transform.translation, (transform.translation, unit.player_id));
     }
 
-    for (_, mut combat, transform, unit) in combatants.query.iter_mut() {
+    for (_, mut combat, transform, unit, activity) in combatants.query.iter_mut() {
         if let Some(target) = combat.target {
             if alive.query.get(target).is_err() {
                 combat.target = None;
             }
         }
         if combat.target.is_some() && !combat.auto_attack {
+            continue;
+        }
+        // Only auto-acquire from idle — respect active player move orders.
+        let is_idle = activity.is_none_or(|a| *a == UnitState::Idle);
+        if !is_idle {
             continue;
         }
         let nearby = target_grid.query_nearby(transform.translation, cc::VISION_RANGE);
@@ -302,14 +307,14 @@ fn damage_resolution_system(
 
 /// Regenerates health for units not in active combat after a delay.
 fn health_regen_system(
-    mut health_q: Query<(&mut RTSHealth, Option<&CombatState>)>,
+    mut health_q: Query<(&mut RTSHealth, Option<&UnitState>)>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (mut health, combat_state) in health_q.iter_mut() {
-        let in_active_combat = combat_state.is_some_and(|cs| matches!(
-            cs.state,
-            CombatStateType::InCombat | CombatStateType::MovingToAttack | CombatStateType::MovingToCombat
+    for (mut health, unit_state) in health_q.iter_mut() {
+        let in_active_combat = unit_state.is_some_and(|us| matches!(
+            us,
+            UnitState::InCombat | UnitState::MovingToAttack | UnitState::MovingToCombat
         ));
         if in_active_combat { continue; }
         if health.current < health.max
@@ -376,25 +381,40 @@ fn add_combat_state_to_fighters(
 ) {
     for (entity, combat) in new_fighters.iter() {
         if combat.auto_attack {
-            commands.entity(entity).insert(CombatState::default());
+            commands.entity(entity).insert((CombatState::default(), UnitState::Idle));
         }
     }
 }
 
 fn update_combat_states(
+    mut commands: Commands,
     mut units: CombatStateUnits,
     alive_transforms: AliveUnitTransforms,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (mut state, combat, transform, movement) in units.query.iter_mut() {
+    for (entity, mut state, combat, transform, movement, current_unit_state) in units.query.iter_mut() {
+        if is_gathering_or_moving_state(current_unit_state) {
+            continue;
+        }
         let new_state = derive_combat_state(combat, transform, movement, &alive_transforms.query);
-        if new_state != state.state {
-            state.state = new_state;
+        if new_state != *current_unit_state {
             state.last_state_change = now;
+            commands.entity(entity).insert(new_state);
         }
         update_target_refs(&mut state, combat, &alive_transforms.query);
     }
+}
+
+fn is_gathering_or_moving_state(state: &UnitState) -> bool {
+    matches!(
+        state,
+        UnitState::Moving
+            | UnitState::MovingToResource
+            | UnitState::Gathering
+            | UnitState::ReturningToBase
+            | UnitState::DeliveringResources
+    )
 }
 
 fn derive_combat_state(
@@ -402,16 +422,16 @@ fn derive_combat_state(
     transform: &Transform,
     movement: Option<&Movement>,
     targets: &Query<&Transform, (With<RTSHealth>, Without<Dying>)>,
-) -> CombatStateType {
-    let Some(target) = combat.target else { return CombatStateType::Idle };
-    let Ok(target_tf) = targets.get(target) else { return CombatStateType::Idle };
+) -> UnitState {
+    let Some(target) = combat.target else { return UnitState::Idle };
+    let Ok(target_tf) = targets.get(target) else { return UnitState::Idle };
     if transform.translation.distance(target_tf.translation) <= combat.attack_range {
-        return CombatStateType::InCombat;
+        return UnitState::InCombat;
     }
     if movement.is_some_and(|m| m.target_position.is_some()) {
-        CombatStateType::MovingToAttack
+        UnitState::MovingToAttack
     } else {
-        CombatStateType::MovingToCombat
+        UnitState::MovingToCombat
     }
 }
 

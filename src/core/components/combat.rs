@@ -73,7 +73,6 @@ impl Default for Combat {
 // Owned by: CombatStatePlugin (update_combat_states)
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct CombatState {
-    pub state: CombatStateType,
     pub target_entity: Option<Entity>,
     pub target_position: Option<Vec3>,
     pub last_state_change: f32,
@@ -84,7 +83,6 @@ pub struct CombatState {
 impl Default for CombatState {
     fn default() -> Self {
         Self {
-            state: CombatStateType::Idle,
             target_entity: None,
             target_position: None,
             last_state_change: 0.0,
@@ -92,20 +90,6 @@ impl Default for CombatState {
             last_attack_attempt: 0.0,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CombatStateType {
-    /// Unit is not in combat, following normal movement/orders
-    Idle,
-    /// Unit is moving toward a combat engagement (initial movement to fight)
-    MovingToCombat,
-    /// Unit is moving toward an attack target but not yet in range
-    MovingToAttack,
-    /// Unit is actively engaged in combat, within attack range
-    InCombat,
-    /// Unit is in combat but temporarily moving (chasing fleeing enemy, repositioning)
-    CombatMoving,
 }
 
 /// Marker set when health reaches zero. Prevents duplicate death processing.

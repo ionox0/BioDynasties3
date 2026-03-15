@@ -66,7 +66,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
-use super::{GatheringState, GatheringStateType};
+use super::GatheringState;
 use crate::core::constants::resource_interaction::{GATHERING_DISTANCE, DROPOFF_TRAVEL_DISTANCE};
 use crate::core::resources::Stockpiles;
 use super::events::{ClearTargetResourceEvent, ResetCargoEvent, ResourceDepletedEvent};
@@ -74,7 +74,8 @@ use crate::rts::movement::events::MovementTargetEvent;
 
 type GathererQuery<'w, 's> = Query<
     'w, 's,
-    (Entity, &'static mut ResourceGatherer, &'static GatheringState, &'static Transform, &'static RTSUnit),
+    (Entity, &'static mut ResourceGatherer, &'static UnitState, &'static Transform, &'static RTSUnit),
+    With<GatheringState>,
 >;
 
 type ResourceQuery<'w, 's> = Query<
@@ -100,12 +101,12 @@ pub(super) fn gathering_system(
     mut resources: ResourceQuery,
     mut ctx: GatheringCtx,
 ) {
-    for (entity, mut gatherer, state, transform, unit) in gatherers.iter_mut() {
-        match state.state {
-            GatheringStateType::Gathering => {
+    for (entity, mut gatherer, unit_state, transform, unit) in gatherers.iter_mut() {
+        match unit_state {
+            UnitState::Gathering => {
                 tick_gathering(entity, &mut gatherer, transform, &mut resources, &mut ctx);
             }
-            GatheringStateType::DeliveringResources => {
+            UnitState::DeliveringResources => {
                 tick_delivery(entity, &gatherer, unit, transform, &mut ctx);
             }
             _ => {}

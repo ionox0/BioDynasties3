@@ -1,6 +1,5 @@
 use bevy::ecs::system::SystemParam;
 use crate::core::components::*;
-use crate::rts::resource::{GatheringState, GatheringStateType};
 use bevy::prelude::*;
 use bevy_animation::graph::AnimationNodeIndex;
 use bevy_animation::prelude::{AnimationGraph, AnimationGraphHandle};
@@ -77,8 +76,7 @@ pub struct AnimationStateChangeEvent {
 /// Grouped read-only queries for animation state derivation.
 #[derive(SystemParam)]
 pub(crate) struct AnimStateParams<'w, 's> {
-    gathering: Query<'w, 's, &'static GatheringState>,
-    combat_state: Query<'w, 's, &'static CombatState>,
+    unit_state: Query<'w, 's, &'static UnitState>,
     health: Query<'w, 's, &'static RTSHealth>,
 }
 
@@ -108,19 +106,15 @@ fn derive_animation_state(
         return AnimationState::Death;
     }
 
-    if state.combat_state.get(entity).is_ok_and(|c| c.state == CombatStateType::InCombat) {
-        return AnimationState::Attacking;
-    }
-
-    if let Ok(gathering) = state.gathering.get(entity) {
-        match gathering.state {
-            GatheringStateType::Gathering => return AnimationState::Special,
-            GatheringStateType::MovingToResource | GatheringStateType::ReturningToBase => {
+    if let Ok(us) = state.unit_state.get(entity) {
+        match us {
+            UnitState::InCombat => return AnimationState::Attacking,
+            UnitState::Gathering => return AnimationState::Special,
+            UnitState::MovingToResource | UnitState::ReturningToBase => {
                 return AnimationState::Walking;
             }
-            GatheringStateType::DeliveringResources | GatheringStateType::Idle => {
-                return AnimationState::Idle;
-            }
+            UnitState::DeliveringResources => return AnimationState::Idle,
+            _ => {}
         }
     }
 

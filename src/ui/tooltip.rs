@@ -1,5 +1,4 @@
 use crate::core::components::*;
-use crate::rts::resource::{GatheringState, GatheringStateType};
 use bevy::prelude::*;
 use bevy::ecs::system::SystemParam;
 
@@ -167,16 +166,8 @@ fn get_unit_task(
     unit_data: &UnitDataQueries,
     unit_state: &UnitStateQueries,
 ) -> String {
-    let building_query = &unit_data.building_query;
-    let gatherer_query = &unit_data.gatherer_query;
-    let combat_query = &unit_data.combat_query;
-    let movement_query = &unit_data.movement_query;
-    let gathering_state_query = &unit_state.gathering_state_query;
-    let combat_state_query = &unit_state.combat_state_query;
-    let health_query = &unit_state.health_query;
-
     // Check if it's a building first
-    if let Ok(building) = building_query.get(entity) {
+    if let Ok(building) = unit_data.building_query.get(entity) {
         let completion_percent =
             (building.construction_progress / building.max_construction * 100.0) as i32;
         return format!(
@@ -185,67 +176,37 @@ fn get_unit_task(
         );
     }
 
-
     // Check for death first
-    if let Ok(health) = health_query.get(entity) {
+    if let Ok(health) = unit_state.health_query.get(entity) {
         if health.current <= 0.0 {
             return "Dead".to_string();
         }
     }
 
-    // Check gathering state — authoritative label; augmented with cargo info from ResourceGatherer
-    if let Ok(gathering_state) = gathering_state_query.get(entity) {
-        let gatherer = gatherer_query.get(entity).ok();
-        match gathering_state.state {
-            GatheringStateType::Idle => return "Idle".to_string(),
-            GatheringStateType::MovingToResource => return "Moving to Resource".to_string(),
-            GatheringStateType::Gathering => {
-                let label = gatherer
+    if let Ok(us) = unit_state.unit_state_query.get(entity) {
+        let gatherer = unit_data.gatherer_query.get(entity).ok();
+        match us {
+            UnitState::Idle => return "Idle".to_string(),
+            UnitState::Moving => return "Moving".to_string(),
+            UnitState::MovingToResource => return "Moving to Resource".to_string(),
+            UnitState::Gathering => {
+                return gatherer
                     .and_then(|g| g.resource_type.as_ref())
                     .map_or("Gathering Resources".to_string(), |rt| format!("Gathering {rt:?}"));
-                return label;
             }
-            GatheringStateType::ReturningToBase | GatheringStateType::DeliveringResources => {
-                let label = gatherer
+            UnitState::ReturningToBase | UnitState::DeliveringResources => {
+                return gatherer
                     .and_then(|g| g.resource_type.as_ref().map(|rt| (rt, g.carried_amount)))
                     .map_or("Returning to Base".to_string(), |(rt, amt)| {
                         format!("Returning {rt:?} ({amt:.0})")
                     });
-                return label;
             }
+            UnitState::InCombat => return "In Combat".to_string(),
+            UnitState::MovingToAttack => return "Moving to Attack".to_string(),
+            UnitState::MovingToCombat => return "Engaging Enemy".to_string(),
         }
     }
 
-    // Check combat state
-    if let Ok(combat_state) = combat_state_query.get(entity) {
-        match combat_state.state {
-            CombatStateType::InCombat => return "In Combat".to_string(),
-            CombatStateType::MovingToAttack => return "Moving to Attack".to_string(),
-            CombatStateType::MovingToCombat => return "Engaging Enemy".to_string(),
-            _ => {} // Continue to other checks
-        }
-    }
-
-    // Check if in combat (only for units that actually auto-attack AND have a target)
-    if let Ok(combat) = combat_query.get(entity) {
-        if combat.auto_attack && combat.target.is_some() {
-            if let Ok(movement) = movement_query.get(entity) {
-                if movement.target_position.is_some() {
-                    return "Moving to attack".to_string();
-                }
-            }
-            return "In combat".to_string();
-        }
-    }
-
-    // Check if just moving
-    if let Ok(movement) = movement_query.get(entity) {
-        if movement.target_position.is_some() {
-            return "Moving".to_string();
-        }
-    }
-
-    // Default to idle
     "Idle".to_string()
 }
 
@@ -254,7 +215,6 @@ fn get_unit_task(
 pub struct UnitDataQueries<'w, 's> {
     pub units: Query<'w, 's, (&'static RTSUnit, &'static RTSHealth, &'static Transform)>,
     pub gatherer_query: Query<'w, 's, &'static ResourceGatherer>,
-    pub combat_query: Query<'w, 's, &'static Combat>,
     pub movement_query: Query<'w, 's, &'static Movement>,
     pub building_query: Query<'w, 's, &'static Building>,
     pub resource_source_query: Query<'w, 's, (&'static ResourceSource, &'static CollisionRadius)>,
@@ -265,8 +225,7 @@ pub struct UnitDataQueries<'w, 's> {
 /// Parameter group for unit state queries to reduce parameter count
 #[derive(SystemParam)]
 pub struct UnitStateQueries<'w, 's> {
-    pub gathering_state_query: Query<'w, 's, &'static GatheringState>,
-    pub combat_state_query: Query<'w, 's, &'static CombatState>,
+    pub unit_state_query: Query<'w, 's, &'static UnitState>,
     pub health_query: Query<'w, 's, &'static RTSHealth>,
     pub player_teams: Query<'w, 's, &'static PlayerTeam>,
 }
