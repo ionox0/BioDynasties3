@@ -91,6 +91,9 @@ struct StepCtx<'a> {
     dt: f32,
 }
 
+/// Give up waiting for a path after this many seconds of consecutive failures.
+const PATHFINDING_GIVE_UP_SECS: f32 = 6.0;
+
 /// Moves all units each frame, following their A* path.
 /// Fires `UnitArrivedEvent` when a unit exhausts its path and clears its target.
 fn move_units(
@@ -99,11 +102,24 @@ fn move_units(
     time: Res<Time>,
     mut arrived: EventWriter<UnitArrivedEvent>,
 ) {
+    let now = time.elapsed_secs();
     let ctx = StepCtx { terrain: &terrain, dt: time.delta_secs().min(0.033) };
     for (entity, mut tf, mut mv, mut pf, rts_unit) in units.iter_mut() {
         if mv.target_position.is_none() {
             mv.current_velocity = Vec3::ZERO;
             snap_to_terrain(&mut tf, ctx.terrain);
+            continue;
+        }
+        // Give up if pathfinding has been failing too long with no path to follow.
+        if pf.path.is_empty()
+            && pf.last_pathfinding_failure.is_finite()
+            && now - pf.last_pathfinding_failure > PATHFINDING_GIVE_UP_SECS
+        {
+            mv.target_position = None;
+            mv.current_velocity = Vec3::ZERO;
+            pf.path_index = 0;
+            pf.last_pathfinding_failure = f32::NEG_INFINITY;
+            arrived.send(UnitArrivedEvent { entity });
             continue;
         }
         if let Some(dir) = step_path(&mut tf, &mut mv, &mut pf, &ctx) {
@@ -168,10 +184,7 @@ fn flat_dir(from: Vec3, to: Vec3) -> Vec3 {
 }
 
 fn snap_to_terrain(tf: &mut Transform, terrain: &StaticTerrainHeights) {
-    let floor = terrain.get_height(tf.translation.x, tf.translation.z) + mc::DEFAULT_SPAWN_HEIGHT;
-    if tf.translation.y < floor {
-        tf.translation.y = floor;
-    }
+    tf.translation.y = terrain.get_height(tf.translation.x, tf.translation.z) + mc::DEFAULT_SPAWN_HEIGHT;
 }
 
 fn clamp_to_map(tf: &mut Transform) {

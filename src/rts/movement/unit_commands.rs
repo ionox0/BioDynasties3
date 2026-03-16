@@ -14,6 +14,7 @@ use crate::core::constants::ui::*;
 use crate::rts::combat::events::CombatStopEvent;
 use crate::rts::resource::events::SetTargetResourceEvent;
 use super::events::{MovementTargetEvent, UnitArrivedEvent};
+use super::formation_events::FormationMoveEvent;
 
 pub struct UnitCommandsPlugin;
 
@@ -28,6 +29,7 @@ struct CommandTargets<'w, 's> {
     selectables: Query<'w, 's, (Entity, &'static Selectable, Option<&'static ResourceGatherer>, Option<&'static Combat>), With<RTSUnit>>,
     resources: Query<'w, 's, (Entity, &'static Transform, &'static ResourceSource)>,
     move_events: EventWriter<'w, MovementTargetEvent>,
+    formation_events: EventWriter<'w, FormationMoveEvent>,
     set_target_events: EventWriter<'w, SetTargetResourceEvent>,
     combat_stop_events: EventWriter<'w, CombatStopEvent>,
     commands: Commands<'w, 's>,
@@ -73,7 +75,8 @@ fn right_click_command(
         .map(|(entity, _, gatherer, combat)| (entity, gatherer.is_some(), combat.is_some()))
         .collect();
 
-    for (entity, has_gatherer, has_combat) in selected {
+    // Per-entity: state, resource target, combat stop.
+    for &(entity, has_gatherer, has_combat) in &selected {
         if has_gatherer {
             if let Some((resource_entity, _, resource_type)) = &resource_click {
                 targets.set_target_events.send(SetTargetResourceEvent {
@@ -87,6 +90,13 @@ fn right_click_command(
         if has_combat {
             targets.combat_stop_events.send(CombatStopEvent { entity });
         }
+    }
+
+    // Movement: spread multiple units into a formation; send single unit directly.
+    let entities: Vec<Entity> = selected.iter().map(|&(e, _, _)| e).collect();
+    if entities.len() > 1 {
+        targets.formation_events.send(FormationMoveEvent { units: entities, target: destination });
+    } else if let Some(entity) = entities.into_iter().next() {
         targets.move_events.send(MovementTargetEvent { entity, target_position: destination });
     }
 }

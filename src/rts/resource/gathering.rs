@@ -106,7 +106,7 @@ pub(super) fn gathering_system(
             UnitState::Gathering => {
                 tick_gathering(entity, &mut gatherer, transform, &mut resources, &mut ctx);
             }
-            UnitState::DeliveringResources => {
+            UnitState::ReturningToBase | UnitState::DeliveringResources => {
                 tick_delivery(entity, &gatherer, unit, transform, &mut ctx);
             }
             _ => {}
