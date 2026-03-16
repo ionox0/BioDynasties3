@@ -11,12 +11,14 @@ const INITIAL_CAMERA_LOOK_DISTANCE: f32 = 200.0;
 
 /// West edge: 85 % of MAP_BOUNDARY — player 1 spawn.
 const PLAYER_SPAWN: Vec3 = Vec3::new(-2550.0, 0.0, 0.0);
+/// East edge: 85 % of MAP_BOUNDARY — AI player 2 spawn.
+const AI_SPAWN: Vec3 = Vec3::new(2300.0, 0.0, 0.0);
 
 pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_scene, spawn_player_base, scatter_map_resources, scatter_map_props))
+        app.add_systems(Startup, (setup_scene, spawn_player_base, spawn_ai_base, scatter_map_resources, scatter_map_props))
             .add_systems(Update, handle_rts_camera_input);
     }
 }
@@ -78,6 +80,57 @@ fn scatter_map_resources(
             CollisionRadius { radius: 8.0 },
         ));
     }
+}
+
+/// Spawns the initial AI base and one worker ant (player_id = 2) at the east edge.
+fn spawn_ai_base(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut stockpiles: ResMut<Stockpiles>,
+    terrain: Res<StaticTerrainHeights>,
+) {
+    *stockpiles.get_or_insert_mut(2) = Stockpile::starting();
+
+    let passable = terrain.find_passable_near(Vec2::new(AI_SPAWN.x, AI_SPAWN.z));
+    let ground_y = terrain.get_height(passable.x, passable.y);
+    let base_pos = Vec3::new(passable.x, ground_y, passable.y);
+
+    commands.spawn((
+        SceneRoot(asset_server.load("models/objects/anthill.glb#Scene0")),
+        Transform::from_translation(base_pos).with_scale(Vec3::splat(20.0)),
+        Building {
+            player_id: 2,
+            building_type: BuildingType::Queen,
+            construction_progress: 100.0,
+            max_construction: 100.0,
+            is_complete: true,
+        },
+        Position { translation: base_pos },
+        CollisionRadius { radius: 20.0 },
+        Selectable { is_selected: false, selection_radius: 10.0 },
+        ProductionQueue::default(),
+    ));
+
+    let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
+    let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
+    commands.spawn((
+        SceneRoot(asset_server.load("models/insects/good/fourmi.glb#Scene0")),
+        Transform::from_translation(worker_pos).with_scale(Vec3::splat(3.75)),
+        RTSUnit { player_id: 2, unit_type: Some(UnitType::Fourmi) },
+        Movement { max_speed: 80.0, current_velocity: Vec3::ZERO, target_position: None },
+        PathfindingState::default(),
+        Position { translation: worker_pos },
+        CollisionRadius { radius: 6.0 },
+        SpatialGridPosition::default(),
+        RTSHealth { current: 100.0, max: 100.0, ..RTSHealth::default() },
+        ResourceGatherer {
+            gather_rate: 5.0,
+            capacity: 10.0,
+            carried_amount: 0.0,
+            resource_type: None,
+            target_resource: None,
+        },
+    ));
 }
 
 // ─── Resource scatter helpers ────────────────────────────────────────────────
