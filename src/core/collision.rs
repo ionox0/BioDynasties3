@@ -164,6 +164,7 @@ fn calc_collision_avoidance(
 
 /// Applies `CollisionAvoidanceEvent` to Movement and Transform.
 /// Sole writer of Movement.current_velocity and Transform.translation for collision response.
+/// Y components are zeroed — terrain snapping handles height.
 fn apply_collision_avoidance(
     mut events: EventReader<CollisionAvoidanceEvent>,
     mut units: Query<(&mut Movement, &mut Transform)>,
@@ -172,8 +173,8 @@ fn apply_collision_avoidance(
         let Ok((mut movement, mut transform)) = units.get_mut(event.entity) else {
             continue;
         };
-        movement.current_velocity += event.velocity_delta;
-        transform.translation += event.position_push;
+        movement.current_velocity += Vec3::new(event.velocity_delta.x, 0.0, event.velocity_delta.z);
+        transform.translation += Vec3::new(event.position_push.x, 0.0, event.position_push.z);
     }
 }
 
@@ -271,13 +272,15 @@ fn resolve_avoidance(force: Vec3, push: Vec3, unit: &UnitState, is_moving: bool,
     (velocity_delta, position_push)
 }
 
-/// Returns collision geometry if two circles overlap, `None` otherwise.
+/// Returns collision geometry if two circles overlap in the XZ plane, `None` otherwise.
+/// Y axis is ignored so units at different heights are still separated horizontally.
 fn check_collision(pos1: Vec3, radius1: f32, pos2: Vec3, radius2: f32, buffer: f32) -> Option<CollisionInfo> {
-    let distance = pos1.distance(pos2);
+    let diff = Vec3::new(pos1.x - pos2.x, 0.0, pos1.z - pos2.z);
+    let distance = diff.length();
     let min_distance = radius1 + radius2 + buffer;
     if distance < min_distance && distance > 0.001 {
         Some(CollisionInfo {
-            direction: (pos1 - pos2).normalize(),
+            direction: diff.normalize(),
             overlap: min_distance - distance,
             distance,
             min_distance,
