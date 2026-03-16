@@ -57,8 +57,10 @@ fn default_columns(count: usize) -> u32 {
 }
 
 fn grid_offset(index: usize, columns: u32) -> Vec3 {
-    const SPACING: f32 = 15.0;
+    const SPACING: f32 = 18.0;
     let col = (index as u32 % columns) as f32;
     let row = (index as u32 / columns) as f32;
-    Vec3::new(col * SPACING - (columns as f32 * SPACING * 0.5), 0.0, row * SPACING)
+    // Center the grid on the target point.
+    let center_offset = (columns - 1) as f32 * SPACING * 0.5;
+    Vec3::new(col * SPACING - center_offset, 0.0, row * SPACING)
 }
