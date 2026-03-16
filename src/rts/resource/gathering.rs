@@ -89,6 +89,7 @@ pub(super) struct GatheringCtx<'w, 's> {
     stockpiles: ResMut<'w, Stockpiles>,
     time: Res<'w, Time>,
     buildings: Query<'w, 's, (Entity, &'static Transform, &'static Building)>,
+    movements: Query<'w, 's, &'static Movement>,
     move_events: EventWriter<'w, MovementTargetEvent>,
     clear_target_events: EventWriter<'w, ClearTargetResourceEvent>,
     reset_cargo_events: EventWriter<'w, ResetCargoEvent>,
@@ -107,7 +108,13 @@ pub(super) fn gathering_system(
                 tick_gathering(entity, &mut gatherer, transform, &mut resources, &mut ctx);
             }
             UnitState::ReturningToBase | UnitState::DeliveringResources => {
-                tick_delivery(entity, &gatherer, unit, transform, &mut ctx);
+                if tick_delivery(entity, &gatherer, unit, transform, &mut ctx) {
+                    if let Some(res) = gatherer.target_resource {
+                        if let Ok((_, res_tf)) = resources.get(res) {
+                            ctx.move_events.send(MovementTargetEvent { entity, target_position: res_tf.translation });
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -157,32 +164,36 @@ fn tick_gathering(
 
 /// Deposits cargo into the player's stockpile when the worker reaches a dropoff building.
 /// If not yet at the building, sends a MovementTargetEvent to travel there.
+/// Returns `true` if the unit deposited this frame (caller should send it back to the resource).
 fn tick_delivery(
     entity: Entity,
     gatherer: &ResourceGatherer,
     unit: &RTSUnit,
     transform: &Transform,
     ctx: &mut GatheringCtx,
-) {
+) -> bool {
     let Some((_, building_pos)) = find_nearest_dropoff(unit.player_id, transform.translation, &ctx.buildings) else {
-        return; // No valid building yet — worker waits.
+        return false; // No valid building yet — worker waits.
     };
 
     let dist = (transform.translation.xz() - building_pos.xz()).length();
     if dist > DROPOFF_TRAVEL_DISTANCE {
-        ctx.move_events.send(MovementTargetEvent { entity, target_position: building_pos });
-        return;
+        let already_moving = ctx.movements.get(entity)
+            .is_ok_and(|m| m.target_position.is_some());
+        if !already_moving {
+            ctx.move_events.send(MovementTargetEvent { entity, target_position: building_pos });
+        }
+        return false;
     }
 
     // At building — deposit and reset cargo.
-    // Worker will be in Gathering state next frame (cargo=0, target_resource still set),
-    // and tick_gathering will send them back to the resource automatically.
     if let Some(resource_type) = &gatherer.resource_type {
         ctx.stockpiles
             .get_or_insert_mut(unit.player_id)
             .add(resource_type, gatherer.carried_amount);
     }
     ctx.reset_cargo_events.send(ResetCargoEvent { gatherer: entity });
+    true
 }
 
 /// Returns the nearest complete dropoff building owned by `player_id`, if any.
