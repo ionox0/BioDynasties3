@@ -167,11 +167,12 @@ fn combat_target_handler(
     }
 }
 
-/// Handles `CombatStopEvent` — clears target, stops attacking, and halts movement.
+/// Handles `CombatStopEvent` — clears combat state only.
+/// Does NOT send StopMovementEvent: every caller also issues a MovementTargetEvent,
+/// so stopping movement here would race with that command and leave the unit stuck.
 fn combat_stop_handler(
     mut stop_events: EventReader<CombatStopEvent>,
     mut combat_q: Query<&mut Combat>,
-    mut stop_move: EventWriter<StopMovementEvent>,
 ) {
     for ev in stop_events.read() {
         let Ok(mut combat) = combat_q.get_mut(ev.entity) else { continue };
@@ -179,7 +180,6 @@ fn combat_stop_handler(
         combat.is_attacking = false;
         combat.auto_attack = false;
         combat.move_dest = None;
-        stop_move.send(StopMovementEvent { entity: ev.entity });
     }
 }
 
