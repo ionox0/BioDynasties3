@@ -9,6 +9,7 @@
 
 use std::collections::HashSet;
 use bevy::prelude::*;
+use crate::core::components::RTSUnit;
 use crate::core::resources::Stockpiles;
 
 const UPDATE_INTERVAL: u32 = 10;
@@ -42,6 +43,12 @@ pub struct AIResourceLabel {
     pub resource_name: &'static str,
 }
 
+/// Unit count label for any player (player_id 1 = human, 2+ = AI).
+#[derive(Component, Debug, Clone)]
+pub struct UnitCountLabel {
+    pub player_id: u8,
+}
+
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
 pub struct ResourceDisplayPlugin;
@@ -51,7 +58,7 @@ impl Plugin for ResourceDisplayPlugin {
         app.add_systems(Startup, (setup_resource_display, setup_ai_resource_panel))
             .add_systems(
                 Update,
-                (manage_ai_resource_panels, update_resource_display, update_ai_resource_display),
+                (manage_ai_resource_panels, update_resource_display, update_ai_resource_display, update_unit_count_display),
             );
     }
 }
@@ -83,6 +90,12 @@ fn setup_resource_display(mut commands: Commands) {
                     TextColor(Color::WHITE),
                 ));
             }
+            parent.spawn((
+                UnitCountLabel { player_id: 1 },
+                Text::new("Units: 0"),
+                TextFont { font_size: 14.0, ..default() },
+                TextColor(Color::WHITE),
+            ));
         });
 }
 
@@ -173,6 +186,12 @@ fn spawn_ai_player_panel(parent: &mut ChildBuilder, player_id: u8) {
                         TextColor(Color::WHITE),
                     ));
                 }
+                row.spawn((
+                    UnitCountLabel { player_id },
+                    Text::new("U:0"),
+                    TextFont { font_size: 9.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
             });
         });
 }
@@ -234,5 +253,24 @@ fn update_ai_resource_display(
             }
         });
         **text = format!("{}:{:.0}", &label.resource_name[..1], value);
+    }
+}
+
+fn update_unit_count_display(
+    mut frame: Local<u32>,
+    units: Query<&RTSUnit>,
+    mut label_q: Query<(&UnitCountLabel, &mut Text)>,
+) {
+    *frame = frame.wrapping_add(1);
+    if !(*frame).is_multiple_of(UPDATE_INTERVAL) {
+        return;
+    }
+    for (label, mut text) in label_q.iter_mut() {
+        let count = units.iter().filter(|u| u.player_id == label.player_id).count();
+        **text = if label.player_id == 1 {
+            format!("Units: {count}")
+        } else {
+            format!("U:{count}")
+        };
     }
 }
