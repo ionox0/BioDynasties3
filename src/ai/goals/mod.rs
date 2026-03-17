@@ -66,4 +66,4 @@
 pub mod types;
 mod executors;
 
-pub use executors::execute_ai_goals_system;
+pub use executors::goal_executor;

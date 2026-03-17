@@ -20,7 +20,7 @@ mod goal_generator;
 
 use bevy::prelude::*;
 use goals::types::GlobalGoalManager;
-use goals::execute_ai_goals_system;
+use goals::goal_executor;
 use goal_generator::goal_generator;
 
 pub struct AIPlugin;
@@ -30,7 +30,7 @@ impl Plugin for AIPlugin {
         app.init_resource::<GlobalGoalManager>()
             .add_systems(
                 Update,
-                (goal_generator, execute_ai_goals_system).chain(),
+                (goal_generator, goal_executor).chain(),
             );
     }
 }

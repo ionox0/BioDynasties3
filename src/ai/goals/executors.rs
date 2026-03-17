@@ -21,7 +21,7 @@ pub struct AiGoalWriters<'w> {
 }
 
 /// Drains `GlobalGoalManager` each frame and executes every goal via events.
-pub fn execute_ai_goals_system(
+pub fn goal_executor(
     mut goals: ResMut<GlobalGoalManager>,
     mut writers: AiGoalWriters,
     mut stockpiles: ResMut<Stockpiles>,
