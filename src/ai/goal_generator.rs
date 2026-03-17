@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use crate::ai::goals::types::GlobalGoalManager;
 use crate::ai::strategy::{
+    BuildingParams, generate_building_goals,
     CombatParams, generate_combat_goals,
     ProductionParams, generate_production_goals,
     WorkerParams, generate_worker_goals,
@@ -22,11 +23,14 @@ const COMBAT_EVAL_MIN: f32 = 20.0;
 const COMBAT_EVAL_MAX: f32 = 45.0;
 /// Combat waves don't begin until this many seconds into the game.
 const COMBAT_INITIAL_DELAY: f32 = 30.0;
+const BUILDING_EVAL_MIN: f32 = 10.0;
+const BUILDING_EVAL_MAX: f32 = 20.0;
 
 pub(crate) struct GoalGeneratorState {
     next_worker_eval: f32,
     next_production_eval: f32,
     next_combat_eval: f32,
+    next_building_eval: f32,
 }
 
 impl Default for GoalGeneratorState {
@@ -37,6 +41,8 @@ impl Default for GoalGeneratorState {
             next_production_eval: 0.0,
             // Combat waits for the initial delay.
             next_combat_eval: COMBAT_INITIAL_DELAY,
+            // Building check activates on the first tick; suppressed if building already exists.
+            next_building_eval: 0.0,
         }
     }
 }
@@ -46,6 +52,7 @@ pub(crate) struct GeneratorQueries<'w, 's> {
     worker: WorkerParams<'w, 's>,
     production: ProductionParams<'w, 's>,
     combat: CombatParams<'w, 's>,
+    building: BuildingParams<'w, 's>,
 }
 
 /// Drives all AI goal generation on per-category jittered intervals.
@@ -71,5 +78,10 @@ pub(crate) fn goal_generator(
     if now >= state.next_combat_eval {
         generate_combat_goals(&mut goals, &queries.combat);
         state.next_combat_eval = now + rng.gen_range(COMBAT_EVAL_MIN..COMBAT_EVAL_MAX);
+    }
+
+    if now >= state.next_building_eval {
+        generate_building_goals(&mut goals, &queries.building);
+        state.next_building_eval = now + rng.gen_range(BUILDING_EVAL_MIN..BUILDING_EVAL_MAX);
     }
 }

@@ -1,4 +1,5 @@
 use crate::core::components::*;
+use crate::entities::entity_factory::EntityFactory;
 use bevy::prelude::*;
 use tracing::instrument;
 
@@ -8,10 +9,38 @@ impl Plugin for ConstructionPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConstructionProgressEvent>()
             .add_event::<ConstructionCompletedEvent>()
+            .add_event::<SpawnBuildingEvent>()
             .add_systems(
                 Update,
-                (construction_system, apply_construction_progress).chain(),
+                (construction_system, apply_construction_progress, building_spawn_handler).chain(),
             );
+    }
+}
+
+/// Fired by any system (AI executor, future player shortcut) to spawn a new building.
+/// Consumed by `building_spawn_handler`.
+#[derive(Event, Debug, Clone)]
+pub struct SpawnBuildingEvent {
+    pub building_type: BuildingType,
+    pub position: Vec3,
+    pub player_id: u8,
+}
+
+/// Spawns building entities in response to `SpawnBuildingEvent`.
+/// Shared infrastructure — handles requests from both AI and player systems.
+pub fn building_spawn_handler(
+    mut events: EventReader<SpawnBuildingEvent>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    for ev in events.read() {
+        EntityFactory::spawn_building(
+            &mut commands,
+            &asset_server,
+            ev.building_type.clone(),
+            ev.position,
+            ev.player_id,
+        );
     }
 }
 

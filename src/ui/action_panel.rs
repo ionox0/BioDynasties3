@@ -9,7 +9,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Building, BuildingType, ProductionQueue, Selectable, UnitType};
 use crate::rts::production::QueueProductionEvent;
-use crate::ui::placement::{building_cost, StartPlacementEvent};
+use crate::ui::placement::StartPlacementEvent;
 
 // ─── SystemParam query structs ────────────────────────────────────────────────
 
@@ -132,8 +132,8 @@ fn spawn_build_section(parent: &mut ChildBuilder) {
             ));
             col.spawn(Node { flex_direction: FlexDirection::Row, column_gap: Val::Px(6.0), ..default() })
                 .with_children(|row| {
-                    spawn_build_button(row, BuildingType::Nursery, "Nursery", building_cost(&BuildingType::Nursery));
-                    spawn_build_button(row, BuildingType::WarriorChamber, "Warrior", building_cost(&BuildingType::WarriorChamber));
+                    spawn_build_button(row, BuildingType::Nursery, "Nursery", BuildingType::Nursery.build_cost_nectar());
+                    spawn_build_button(row, BuildingType::WarriorChamber, "Warrior", BuildingType::WarriorChamber.build_cost_nectar());
                 });
         });
 }

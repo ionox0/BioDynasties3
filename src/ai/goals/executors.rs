@@ -9,6 +9,7 @@ use crate::rts::resource::events::SetTargetResourceEvent;
 use crate::rts::movement::events::MovementTargetEvent;
 use crate::rts::production::QueueProductionEvent;
 use crate::rts::combat::events::CombatTargetEvent;
+use crate::rts::construction::SpawnBuildingEvent;
 use super::types::{GlobalGoalManager, UnifiedGoal};
 
 /// Grouped event writers used by executor helpers.
@@ -18,6 +19,7 @@ pub struct AiGoalWriters<'w> {
     pub move_events: EventWriter<'w, MovementTargetEvent>,
     pub queue_production: EventWriter<'w, QueueProductionEvent>,
     pub combat_target: EventWriter<'w, CombatTargetEvent>,
+    pub spawn_building: EventWriter<'w, SpawnBuildingEvent>,
 }
 
 /// Drains `GlobalGoalManager` each frame and executes every goal via events.
@@ -41,6 +43,18 @@ pub fn goal_executor(
                     target: *target,
                     move_to_range: true,
                 });
+            }
+            UnifiedGoal::BuildBuilding { building_type, position, player_id } => {
+                let cost = building_type.build_cost_nectar();
+                let stockpile = stockpiles.get_or_insert_mut(*player_id);
+                if stockpile.nectar >= cost {
+                    stockpile.nectar -= cost;
+                    writers.spawn_building.send(SpawnBuildingEvent {
+                        building_type: building_type.clone(),
+                        position: *position,
+                        player_id: *player_id,
+                    });
+                }
             }
         }
     }

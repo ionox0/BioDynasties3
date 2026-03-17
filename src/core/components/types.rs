@@ -27,6 +27,15 @@ impl BuildingType {
             BuildingType::WarriorChamber => "Warrior Chamber",
         }
     }
+
+    /// Nectar cost to place this building.
+    pub fn build_cost_nectar(&self) -> f32 {
+        match self {
+            BuildingType::Queen          => 200.0,
+            BuildingType::Nursery        => 75.0,
+            BuildingType::WarriorChamber => 120.0,
+        }
+    }
 }
 
 impl UnitType {

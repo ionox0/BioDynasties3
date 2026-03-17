@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::core::components::{ResourceType, UnitType};
+use crate::core::components::{BuildingType, ResourceType, UnitType};
 
 /// A single AI goal with all parameters embedded.
 #[derive(Debug, Clone)]
@@ -22,6 +22,12 @@ pub enum UnifiedGoal {
     AttackTarget {
         attacker: Entity,
         target: Entity,
+    },
+    /// Spawn a new building at the given position.
+    BuildBuilding {
+        building_type: BuildingType,
+        position: Vec3,
+        player_id: u8,
     },
 }
 
@@ -50,7 +56,7 @@ impl GlobalGoalManager {
         self.goals.iter().any(|pg| match &pg.goal {
             UnifiedGoal::AssignWorkerToResource { worker, .. } => *worker == entity,
             UnifiedGoal::AttackTarget { attacker, .. } => *attacker == entity,
-            UnifiedGoal::BuildUnit { .. } => false,
+            UnifiedGoal::BuildUnit { .. } | UnifiedGoal::BuildBuilding { .. } => false,
         })
     }
 

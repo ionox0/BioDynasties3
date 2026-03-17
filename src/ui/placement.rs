@@ -164,7 +164,7 @@ fn handle_placement_commit(
     if mouse.just_pressed(MouseButton::Left) {
         let pos = cursor.world_position;
         if !terrain.is_passable(pos.x, pos.z) { return; }
-        let cost = building_cost(building_type);
+        let cost = building_type.build_cost_nectar();
         let stockpile = stockpiles.get_or_insert_mut(1);
         if stockpile.nectar < cost { return; }
         stockpile.nectar -= cost;
@@ -214,10 +214,3 @@ fn cancel_placement(commands: &mut Commands, placement: &mut BuildingPlacement) 
     placement.mode = PlacementMode::None;
 }
 
-pub fn building_cost(building_type: &BuildingType) -> f32 {
-    match building_type {
-        BuildingType::Queen => 200.0,
-        BuildingType::Nursery => 75.0,
-        BuildingType::WarriorChamber => 120.0,
-    }
-}
