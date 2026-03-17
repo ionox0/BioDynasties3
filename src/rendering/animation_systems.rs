@@ -1,5 +1,6 @@
 use bevy::ecs::system::SystemParam;
 use crate::core::components::*;
+use crate::core::unit_stats::get_unit_stats;
 use bevy::prelude::*;
 use bevy_animation::graph::AnimationNodeIndex;
 use bevy_animation::prelude::{AnimationGraph, AnimationGraphHandle};
@@ -140,6 +141,11 @@ fn is_flying_unit(unit_type: &UnitType) -> bool {
     )
 }
 
+fn play_with_speed(player: &mut AnimationPlayer, index: AnimationNodeIndex, unit_type: Option<&UnitType>) {
+    let speed = unit_type.map_or(1.0, |ut| get_unit_stats(ut).animation_speed);
+    player.play(index).repeat().set_speed(speed);
+}
+
 /// Get the specific animation name for a unit type and animation state
 fn get_animation_name(unit_type: &crate::core::components::UnitType, animation_state: &AnimationState) -> String {
     use crate::core::components::UnitType;
@@ -196,7 +202,7 @@ pub fn update_animations(
                     }
 
                     if let Some(index) = node_index {
-                        player.play(index).repeat();
+                        play_with_speed(&mut player, index, rts_unit.unit_type.as_ref());
                     } else {
                         debug!(
                             "No animation node index stored for entity {:?}",
@@ -322,16 +328,16 @@ fn search_simple_for_player(
 pub fn start_idle_animations(
     mut changed_controllers: RecentlyChangedControllers,
     mut animation_players: Query<&mut AnimationPlayer>,
+    units: Query<&RTSUnit>,
 ) {
-    for (_entity, controller) in changed_controllers.query.iter_mut() {
-        // If we just got an animation player assigned, start the idle animation
+    for (entity, controller) in changed_controllers.query.iter_mut() {
         if let Some(player_entity) = controller.animation_player {
             if let Ok(mut player) = animation_players.get_mut(player_entity) {
-                // Use the stored node index if available, otherwise fall back to index 0
                 let node_index = controller
                     .animation_node_index
                     .unwrap_or(AnimationNodeIndex::new(0));
-                player.play(node_index).repeat();
+                let unit_type = units.get(entity).ok().and_then(|u| u.unit_type.as_ref());
+                play_with_speed(&mut player, node_index, unit_type);
             }
         }
     }
@@ -436,7 +442,7 @@ pub fn setup_glb_animations(
                     // Start playing default animation immediately
                     if let Ok(mut player) = animation_players.get_mut(player_entity) {
                         if let Some(node_index) = controller.animation_node_index {
-                            player.play(node_index).repeat();
+                            play_with_speed(&mut player, node_index, rts_unit.unit_type.as_ref());
                         }
                     }
                 }

@@ -31,6 +31,7 @@ struct BaseStats {
     pub speed_multiplier: f32,
     pub armor_base: f32,
     pub attack_type: AttackType,
+    pub animation_speed: f32,
 }
 
 /// Health statistics for a unit type.
@@ -65,21 +66,8 @@ pub struct UnitStatsConfig {
     pub combat: CombatStats,
     pub movement: MovementStats,
     pub collision_radius: f32,
+    pub animation_speed: f32,
 }
-
-/// Dragonfly — ultimate elite flying unit.
-pub const DRAGONFLY_STATS: UnitStatsConfig = UnitStatsConfig {
-    health: HealthStats { current: 300.0, max: 300.0, armor: 3.0, regeneration_rate: 0.8 },
-    combat: CombatStats {
-        attack_damage: 35.0,
-        attack_range: 22.0,
-        attack_speed: 1.5,
-        attack_type: AttackType::Melee,
-        auto_attack: true,
-    },
-    movement: MovementStats { max_speed: 160.0 },
-    collision_radius: 3.0,
-};
 
 // ─── Dynamic generation ───────────────────────────────────────────────────────
 
@@ -122,6 +110,7 @@ fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
         },
         movement: MovementStats { max_speed: speed },
         collision_radius,
+        animation_speed: base.animation_speed,
     }
 }
 
@@ -144,6 +133,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
         speed_multiplier: 1.0,
         armor_base: 0.0,
         attack_type: AttackType::Melee,
+        animation_speed: 1.5,
     });
     stats.insert(UnitRole::Tank, BaseStats {
         health_multiplier: 1.8,
@@ -151,6 +141,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
         speed_multiplier: 0.7,
         armor_base: 3.0,
         attack_type: AttackType::Melee,
+        animation_speed: 0.7,
     });
     stats.insert(UnitRole::Dps, BaseStats {
         health_multiplier: 0.9,
@@ -158,6 +149,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
         speed_multiplier: 1.1,
         armor_base: 0.5,
         attack_type: AttackType::Melee,
+        animation_speed: 1.2,
     });
     stats.insert(UnitRole::Scout, BaseStats {
         health_multiplier: 0.7,
@@ -165,6 +157,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
         speed_multiplier: 1.6,
         armor_base: 0.0,
         attack_type: AttackType::Melee,
+        animation_speed: 1.4,
     });
     stats.insert(UnitRole::Siege, BaseStats {
         health_multiplier: 1.5,
@@ -172,6 +165,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
         speed_multiplier: 0.6,
         armor_base: 2.0,
         attack_type: AttackType::Siege,
+        animation_speed: 0.8,
     });
     stats.insert(UnitRole::Elite, BaseStats {
         health_multiplier: 2.5,
@@ -179,6 +173,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
         speed_multiplier: 2.0,
         armor_base: 3.0,
         attack_type: AttackType::Melee,
+        animation_speed: 1.0,
     });
 
     stats
@@ -186,8 +181,5 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
 
 /// Returns the complete stats configuration for a given unit type.
 pub fn get_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
-    match unit_type {
-        UnitType::Dragonfly => DRAGONFLY_STATS,
-        _ => generate_unit_stats(unit_type),
-    }
+    generate_unit_stats(unit_type)
 }
