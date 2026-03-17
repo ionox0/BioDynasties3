@@ -41,9 +41,13 @@ pub mod events;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
+use crate::core::GameSet;
 use crate::core::spatial_grid::IncrementalSpatialGrid;
 use crate::rts::movement::events::{MovementTargetEvent, StopMovementEvent};
 use self::events::{CombatStopEvent, CombatTargetEvent, DamageEvent, DeathEvent};
+
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub(crate) struct CombatSet;
 
 #[derive(SystemParam)]
 pub(crate) struct AliveUnits<'w, 's> {
@@ -72,7 +76,7 @@ pub(crate) struct HealthyUnits<'w, 's> {
 
 #[derive(SystemParam)]
 pub(crate) struct CombatStateUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>, &'static UnitState), Without<Dying>>,
+    query: Query<'w, 's, (Entity, &'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>, &'static mut UnitState), Without<Dying>>,
 }
 
 #[derive(SystemParam)]
@@ -138,15 +142,19 @@ impl Plugin for CombatPlugin {
                     health_regen_system,
                     death_system,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(CombatSet)
+                    .in_set(GameSet::RtsUpdate),
             );
     }
 }
 
 // ─── Event handlers ──────────────────────────────────────────────────────────
 
-/// Handles `CombatTargetEvent` — assigns `Combat.target` and optionally triggers movement.
+/// Handles `CombatTargetEvent` — assigns `Combat.target`, sets `UnitState::MovingToAttack`,
+/// and optionally triggers movement.
 fn combat_target_handler(
+    mut commands: Commands,
     mut target_events: EventReader<CombatTargetEvent>,
     mut move_events: EventWriter<MovementTargetEvent>,
     mut combat_q: Query<&mut Combat>,
@@ -156,6 +164,7 @@ fn combat_target_handler(
         let Ok(mut combat) = combat_q.get_mut(ev.attacker) else { continue };
         combat.target = Some(ev.target);
         combat.auto_attack = true;
+        commands.entity(ev.attacker).insert(UnitState::MovingToAttack);
         if ev.move_to_range {
             if let Ok(target_tf) = transform_q.get(ev.target) {
                 move_events.send(MovementTargetEvent {
@@ -370,7 +379,10 @@ impl Plugin for CombatStatePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (add_combat_state_to_fighters, update_combat_states).chain(),
+            (add_combat_state_to_fighters, update_combat_states)
+                .chain()
+                .after(CombatSet)
+                .in_set(GameSet::RtsUpdate),
         );
     }
 }
@@ -387,20 +399,19 @@ fn add_combat_state_to_fighters(
 }
 
 fn update_combat_states(
-    mut commands: Commands,
     mut units: CombatStateUnits,
     alive_transforms: AliveUnitTransforms,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (entity, mut state, combat, transform, movement, current_unit_state) in units.query.iter_mut() {
-        if is_gathering_or_moving_state(current_unit_state) {
+    for (_, mut state, combat, transform, movement, mut unit_state) in units.query.iter_mut() {
+        if is_gathering_or_moving_state(&unit_state) {
             continue;
         }
         let new_state = derive_combat_state(combat, transform, movement, &alive_transforms.query);
-        if new_state != *current_unit_state {
+        if new_state != *unit_state {
             state.last_state_change = now;
-            commands.entity(entity).insert(new_state);
+            *unit_state = new_state;
         }
         update_target_refs(&mut state, combat, &alive_transforms.query);
     }

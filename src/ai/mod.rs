@@ -19,6 +19,7 @@ pub mod strategy;
 mod goal_generator;
 
 use bevy::prelude::*;
+use crate::core::GameSet;
 use goals::types::{GlobalGoalManager, GoalQueueSnapshot};
 use goals::goal_executor;
 use goal_generator::goal_generator;
@@ -31,7 +32,9 @@ impl Plugin for AIPlugin {
             .init_resource::<GoalQueueSnapshot>()
             .add_systems(
                 Update,
-                (goal_generator, snapshot_goals, goal_executor).chain(),
+                (goal_generator, snapshot_goals, goal_executor)
+                    .chain()
+                    .in_set(GameSet::AiGoals),
             );
     }
 }

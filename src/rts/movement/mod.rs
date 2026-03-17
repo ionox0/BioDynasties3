@@ -17,6 +17,7 @@ pub mod unstuck;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::movement as mc;
+use crate::core::GameSet;
 use crate::world::static_terrain::StaticTerrainHeights;
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
 use self::pathfinding::{request_paths, poll_path_tasks};
@@ -42,7 +43,8 @@ impl Plugin for MovementPlugin {
                     sync_position_component,
                     unstuck_system,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(GameSet::RtsUpdate),
             );
     }
 }

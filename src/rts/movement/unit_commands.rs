@@ -9,6 +9,7 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
+use crate::core::GameSet;
 use crate::core::constants::resource_interaction::RESOURCE_CLICK_RADIUS;
 use crate::core::constants::ui::*;
 use crate::rts::combat::events::CombatStopEvent;
@@ -20,7 +21,10 @@ pub struct UnitCommandsPlugin;
 
 impl Plugin for UnitCommandsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (right_click_command, clear_move_activity_on_arrival));
+        app.add_systems(
+            Update,
+            (right_click_command, clear_move_activity_on_arrival).in_set(GameSet::RtsUpdate),
+        );
     }
 }
 

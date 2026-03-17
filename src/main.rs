@@ -14,6 +14,7 @@ use ai::AIPlugin;
 use core::constants;
 use core::time_controls::TimeControlPlugin;
 use core::CollisionPlugin;
+use core::GameSet;
 use debug::DebugPlugin;
 use entities::LifecyclePlugin;
 use rendering::{AnimationPlugin, HoverEffectsPlugin};
@@ -61,5 +62,9 @@ fn main() {
             UIPlugin,
         ))
         .add_plugins((ProductionPlugin, AIPlugin, CargoIndicatorPlugin))
+        .configure_sets(Update, GameSet::RtsUpdate.before(GameSet::AiGoals))
+        .add_systems(Update, apply_deferred
+            .after(GameSet::RtsUpdate)
+            .before(GameSet::AiGoals))
         .run();
 }

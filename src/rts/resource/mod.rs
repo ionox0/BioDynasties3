@@ -3,6 +3,7 @@ pub mod events;
 pub mod gathering;
 
 use crate::core::components::*;
+use crate::core::GameSet;
 use crate::core::resources::Stockpiles;
 use bevy::prelude::*;
 use self::events::*;
@@ -46,7 +47,8 @@ impl Plugin for ResourceStatePlugin {
                     gathering_system,
                     despawn_depleted_resources,
                 )
-                    .chain(),
+                    .chain()
+                    .in_set(GameSet::RtsUpdate),
             );
     }
 }
@@ -113,19 +115,18 @@ pub fn resource_state_system(
 /// Derives `UnitState` from `ResourceGatherer` each frame.
 /// Sole gathering-domain writer of `UnitState`. Skips if `UnitState` is a combat or Moving variant.
 fn update_gathering_states(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut GatheringState, &ResourceGatherer, Option<&Movement>, &UnitState), Without<Dying>>,
+    mut query: Query<(Entity, &mut GatheringState, &ResourceGatherer, Option<&Movement>, &mut UnitState), Without<Dying>>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (entity, mut gs, gatherer, movement, current_state) in query.iter_mut() {
-        if is_combat_or_moving_state(current_state) {
+    for (_, mut gs, gatherer, movement, mut current_state) in query.iter_mut() {
+        if is_combat_or_moving_state(&current_state) {
             continue;
         }
         let new_state = derive_gathering_state(gatherer, movement);
         if new_state != *current_state {
             gs.last_state_change = now;
-            commands.entity(entity).insert(new_state);
+            *current_state = new_state;
         }
     }
 }

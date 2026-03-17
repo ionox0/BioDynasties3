@@ -5,8 +5,10 @@ pub mod components;
 pub mod constants;
 pub mod logging_utils;
 pub mod resources;
+pub mod schedule;
 pub mod spatial_grid;
 pub mod time_controls;
 pub mod unit_stats;
 
 pub use collision::CollisionPlugin;
+pub use schedule::GameSet;
