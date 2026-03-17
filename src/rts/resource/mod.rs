@@ -1,3 +1,4 @@
+pub mod cargo_indicator;
 pub mod events;
 pub mod gathering;
 
@@ -43,6 +44,7 @@ impl Plugin for ResourceStatePlugin {
                     resource_state_system,
                     update_gathering_states,
                     gathering_system,
+                    despawn_depleted_resources,
                 )
                     .chain(),
             );
@@ -136,6 +138,15 @@ fn is_combat_or_moving_state(state: &UnitState) -> bool {
             | UnitState::MovingToAttack
             | UnitState::MovingToCombat
     )
+}
+
+fn despawn_depleted_resources(
+    mut commands: Commands,
+    mut events: EventReader<ResourceDepletedEvent>,
+) {
+    for event in events.read() {
+        commands.entity(event.resource_entity).despawn_recursive();
+    }
 }
 
 fn derive_gathering_state(

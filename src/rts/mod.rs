@@ -16,5 +16,6 @@ pub use movement::MovementPlugin;
 pub use movement::pathfinding::PathfindingPlugin;
 pub use movement::unit_commands::UnitCommandsPlugin;
 pub use production::ProductionPlugin;
+pub use resource::cargo_indicator::CargoIndicatorPlugin;
 pub use resource::ResourceStatePlugin;
 pub use selection::SelectionPlugin;

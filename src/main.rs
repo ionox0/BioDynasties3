@@ -17,7 +17,7 @@ use core::CollisionPlugin;
 use debug::DebugPlugin;
 use entities::LifecyclePlugin;
 use rendering::{AnimationPlugin, HoverEffectsPlugin};
-use rts::{CombatPlugin, CombatStatePlugin, ConstructionPlugin, CursorManagerPlugin, FormationPlugin, MovementPlugin, PathfindingPlugin, ProductionPlugin, ResourceStatePlugin, SelectionPlugin, UnitCommandsPlugin};
+use rts::{CargoIndicatorPlugin, CombatPlugin, CombatStatePlugin, ConstructionPlugin, CursorManagerPlugin, FormationPlugin, MovementPlugin, PathfindingPlugin, ProductionPlugin, ResourceStatePlugin, SelectionPlugin, UnitCommandsPlugin};
 use scene::ScenePlugin;
 use ui::UIPlugin;
 use world::{GridPlugin, SimpleMaterialPlugin, StaticTerrainPlugin};
@@ -60,6 +60,6 @@ fn main() {
             FormationPlugin,
             UIPlugin,
         ))
-        .add_plugins((ProductionPlugin, AIPlugin))
+        .add_plugins((ProductionPlugin, AIPlugin, CargoIndicatorPlugin))
         .run();
 }
