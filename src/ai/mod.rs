@@ -19,7 +19,7 @@ pub mod strategy;
 mod goal_generator;
 
 use bevy::prelude::*;
-use goals::types::GlobalGoalManager;
+use goals::types::{GlobalGoalManager, GoalQueueSnapshot};
 use goals::goal_executor;
 use goal_generator::goal_generator;
 
@@ -28,9 +28,16 @@ pub struct AIPlugin;
 impl Plugin for AIPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GlobalGoalManager>()
+            .init_resource::<GoalQueueSnapshot>()
             .add_systems(
                 Update,
-                (goal_generator, goal_executor).chain(),
+                (goal_generator, snapshot_goals, goal_executor).chain(),
             );
+    }
+}
+
+fn snapshot_goals(goals: Res<GlobalGoalManager>, mut snapshot: ResMut<GoalQueueSnapshot>) {
+    if !goals.goals.is_empty() {
+        snapshot.goals = goals.goals.clone();
     }
 }

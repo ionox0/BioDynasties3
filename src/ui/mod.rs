@@ -1,6 +1,7 @@
 //! UI components and systems.
 
 pub mod action_panel;
+pub mod ai_goals_debug;
 pub mod health_ui;
 pub mod icons;
 pub mod placement;
@@ -9,6 +10,7 @@ pub mod tooltip;
 
 use bevy::prelude::*;
 use action_panel::ActionPanelPlugin;
+use ai_goals_debug::AIGoalsDebugPlugin;
 use health_ui::HealthUIPlugin;
 use placement::PlacementPlugin;
 use resource_display::ResourceDisplayPlugin;
@@ -29,6 +31,7 @@ impl Plugin for UIPlugin {
                 ResourceDisplayPlugin,
                 ActionPanelPlugin,
                 PlacementPlugin,
+                AIGoalsDebugPlugin,
             ))
             .add_systems(Startup, (setup_tooltip, icons::load_ui_icons))
             .add_systems(

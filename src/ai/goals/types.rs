@@ -38,6 +38,13 @@ pub struct PrioritizedGoal {
     pub goal: UnifiedGoal,
 }
 
+/// Snapshot of the last non-empty goal batch, persists until the next batch.
+/// Written by `snapshot_goals` (between generation and execution); read by debug UI.
+#[derive(Resource, Default, Debug)]
+pub struct GoalQueueSnapshot {
+    pub goals: Vec<PrioritizedGoal>,
+}
+
 /// Per-frame goal queue. Strategy systems write goals here; `execute_ai_goals_system` drains it.
 ///
 /// Owned by: AIPlugin (strategy systems write; execute_ai_goals_system drains)
