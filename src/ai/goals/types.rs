@@ -18,6 +18,11 @@ pub enum UnifiedGoal {
         unit_type: UnitType,
         player_id: u8,
     },
+    /// Order an AI unit to attack a specific target.
+    AttackTarget {
+        attacker: Entity,
+        target: Entity,
+    },
 }
 
 /// A goal with an attached priority score (higher = executed first).

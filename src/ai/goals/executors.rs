@@ -8,6 +8,7 @@ use crate::core::resources::Stockpiles;
 use crate::rts::resource::events::SetTargetResourceEvent;
 use crate::rts::movement::events::MovementTargetEvent;
 use crate::rts::production::QueueProductionEvent;
+use crate::rts::combat::events::CombatTargetEvent;
 use super::types::{GlobalGoalManager, UnifiedGoal};
 
 /// Grouped event writers used by executor helpers.
@@ -16,6 +17,7 @@ pub struct AiGoalWriters<'w> {
     pub set_target: EventWriter<'w, SetTargetResourceEvent>,
     pub move_events: EventWriter<'w, MovementTargetEvent>,
     pub queue_production: EventWriter<'w, QueueProductionEvent>,
+    pub combat_target: EventWriter<'w, CombatTargetEvent>,
 }
 
 /// Drains `GlobalGoalManager` each frame and executes every goal via events.
@@ -32,6 +34,13 @@ pub fn execute_ai_goals_system(
             }
             UnifiedGoal::BuildUnit { .. } => {
                 execute_build_unit(&pg.goal, &mut writers, &mut stockpiles);
+            }
+            UnifiedGoal::AttackTarget { attacker, target } => {
+                writers.combat_target.send(CombatTargetEvent {
+                    attacker: *attacker,
+                    target: *target,
+                    move_to_range: true,
+                });
             }
         }
     }
