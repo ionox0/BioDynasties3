@@ -10,22 +10,14 @@ use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 const WORKER_ASSIGNMENT_PRIORITY: f32 = 10.0;
 
 #[derive(SystemParam)]
-pub(crate) struct IdleWorkers<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static RTSUnit, &'static UnitState, &'static Transform), With<ResourceGatherer>>,
+pub(crate) struct WorkerParams<'w, 's> {
+    pub(crate) workers: Query<'w, 's, (Entity, &'static RTSUnit, &'static UnitState, &'static Transform), With<ResourceGatherer>>,
+    pub(crate) resources: Query<'w, 's, (Entity, &'static ResourceSource, &'static Transform), Without<RTSUnit>>,
 }
 
-#[derive(SystemParam)]
-pub(crate) struct AvailableResources<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static ResourceSource, &'static Transform), Without<RTSUnit>>,
-}
-
-/// Finds idle AI workers and generates `AssignWorkerToResource` goals.
-pub fn worker_goal_system(
-    mut goals: ResMut<GlobalGoalManager>,
-    workers: IdleWorkers,
-    resources: AvailableResources,
-) {
-    for (entity, unit, state, transform) in workers.query.iter() {
+/// Assigns idle AI workers to resource nodes.
+pub fn generate_worker_goals(goals: &mut GlobalGoalManager, params: &WorkerParams) {
+    for (entity, unit, state, tf) in params.workers.iter() {
         if unit.player_id < 2 {
             continue;
         }
@@ -35,10 +27,12 @@ pub fn worker_goal_system(
         if *state != UnitState::Idle {
             continue;
         }
+        if goals.has_goal_for(entity) {
+            continue;
+        }
         let Some((resource_entity, resource_type, resource_pos)) =
-            find_nearest_resource(transform.translation, &resources.query)
+            find_nearest_resource(tf.translation, &params.resources)
         else {
-            println!("Idle worker has no available resources to gather");
             continue;
         };
         goals.push(

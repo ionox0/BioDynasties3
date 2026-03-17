@@ -2,6 +2,6 @@ pub mod combat;
 pub mod production;
 pub mod workers;
 
-pub use combat::combat_goal_system;
-pub use production::production_goal_system;
-pub use workers::worker_goal_system;
+pub(crate) use combat::{CombatParams, generate_combat_goals};
+pub(crate) use production::{ProductionParams, generate_production_goals};
+pub(crate) use workers::{WorkerParams, generate_worker_goals};

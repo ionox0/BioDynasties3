@@ -3,10 +3,12 @@
 //! ## System order (each Update frame)
 //!
 //! ```text
-//! worker_goal_system          (idle workers → AssignWorkerToResource goals)
-//! production_goal_system      (can-afford + under-cap → BuildUnit goals)
+//! goal_generator          (fires each strategy generator on a jittered interval)
+//!   ├─ generate_worker_goals     → AssignWorkerToResource goals
+//!   ├─ generate_production_goals → BuildUnit goals
+//!   └─ generate_combat_goals     → AttackTarget goals
 //!   ↓
-//! execute_ai_goals_system     (drains GlobalGoalManager → fires events, deducts costs)
+//! execute_ai_goals_system (drains GlobalGoalManager → fires events, deducts costs)
 //! ```
 //!
 //! Unit spawning is handled by `ProductionPlugin` in `rts/production.rs`,
@@ -14,11 +16,12 @@
 
 pub mod goals;
 pub mod strategy;
+mod goal_generator;
 
 use bevy::prelude::*;
 use goals::types::GlobalGoalManager;
 use goals::execute_ai_goals_system;
-use strategy::{combat_goal_system, production_goal_system, worker_goal_system};
+use goal_generator::goal_generator;
 
 pub struct AIPlugin;
 
@@ -27,7 +30,7 @@ impl Plugin for AIPlugin {
         app.init_resource::<GlobalGoalManager>()
             .add_systems(
                 Update,
-                (worker_goal_system, production_goal_system, combat_goal_system, execute_ai_goals_system).chain(),
+                (goal_generator, execute_ai_goals_system).chain(),
             );
     }
 }

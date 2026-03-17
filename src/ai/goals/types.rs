@@ -45,6 +45,15 @@ impl GlobalGoalManager {
         self.goals.push(PrioritizedGoal { priority, goal });
     }
 
+    /// Returns true if any queued goal already references `entity` as its acting unit.
+    pub fn has_goal_for(&self, entity: Entity) -> bool {
+        self.goals.iter().any(|pg| match &pg.goal {
+            UnifiedGoal::AssignWorkerToResource { worker, .. } => *worker == entity,
+            UnifiedGoal::AttackTarget { attacker, .. } => *attacker == entity,
+            UnifiedGoal::BuildUnit { .. } => false,
+        })
+    }
+
     /// Drains all goals sorted by descending priority.
     pub fn drain_sorted(&mut self) -> Vec<PrioritizedGoal> {
         let mut goals = std::mem::take(&mut self.goals);

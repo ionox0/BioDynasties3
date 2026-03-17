@@ -11,26 +11,23 @@ const BUILD_UNIT_PRIORITY: f32 = 5.0;
 const COMBAT_GOAL_PRIORITY_BASE: f32 = 60.0;
 
 #[derive(SystemParam)]
-pub(crate) struct ProductionBuildings<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Building), With<ProductionQueue>>,
+pub(crate) struct ProductionParams<'w, 's> {
+    pub(crate) units: Query<'w, 's, &'static RTSUnit>,
+    pub(crate) buildings: Query<'w, 's, (Entity, &'static Building), With<ProductionQueue>>,
+    pub(crate) stockpiles: Res<'w, Stockpiles>,
 }
 
 /// Generates `BuildUnit` goals for all AI-controlled unit types — workers and military.
-pub fn production_goal_system(
-    mut goals: ResMut<GlobalGoalManager>,
-    units: Query<&RTSUnit>,
-    buildings: ProductionBuildings,
-    stockpiles: Res<Stockpiles>,
-) {
-    for (player_id, stockpile) in stockpiles.0.iter() {
+pub fn generate_production_goals(goals: &mut GlobalGoalManager, params: &ProductionParams) {
+    for (player_id, stockpile) in params.stockpiles.0.iter() {
         if *player_id < 2 {
             continue;
         }
-        push_worker_goal(&mut goals, &units, &buildings.query, *player_id, stockpile.nectar);
-        let military_count = count_military_units(&units, *player_id);
+        push_worker_goal(goals, &params.units, &params.buildings, *player_id, stockpile.nectar);
+        let military_count = count_military_units(&params.units, *player_id);
         push_military_goals(
-            &mut goals,
-            &buildings.query,
+            goals,
+            &params.buildings,
             *player_id,
             military_count,
             &early_military_roster(),
