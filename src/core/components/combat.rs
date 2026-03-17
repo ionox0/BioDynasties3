@@ -70,7 +70,7 @@ impl Default for Combat {
     }
 }
 
-// Owned by: CombatStatePlugin (update_combat_states)
+// Owned by: CombatPlugin (update_combat_states)
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct CombatState {
     pub target_entity: Option<Entity>,

@@ -22,8 +22,8 @@ fn setup_goals_debug_panel(mut commands: Commands) {
             GoalsDebugPanel,
             Node {
                 position_type: PositionType::Absolute,
-                bottom: Val::Px(8.0),
-                left: Val::Px(8.0),
+                bottom: Val::Px(96.0),
+                right: Val::Px(8.0),
                 padding: UiRect::all(Val::Px(8.0)),
                 flex_direction: FlexDirection::Column,
                 max_width: Val::Px(340.0),

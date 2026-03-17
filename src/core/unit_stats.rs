@@ -110,7 +110,10 @@ fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
         },
         movement: MovementStats { max_speed: speed },
         collision_radius,
-        animation_speed: base.animation_speed,
+        animation_speed: match unit_type {
+            UnitType::GoliathBirdeater => base.animation_speed * 3.0,
+            _ => base.animation_speed,
+        },
     }
 }
 

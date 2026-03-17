@@ -8,7 +8,7 @@ pub mod production;
 pub mod resource;
 pub mod selection;
 
-pub use combat::{CombatPlugin, CombatStatePlugin};
+pub use combat::CombatPlugin;
 pub use construction::ConstructionPlugin;
 pub use cursor_manager::CursorManagerPlugin;
 pub use movement::formation::FormationPlugin;

@@ -16,6 +16,8 @@ pub struct Formation {
     pub slot_offset: Vec3,
 }
 
+const SPACING: f32 = 35.0;
+
 pub struct FormationPlugin;
 
 impl Plugin for FormationPlugin {
@@ -57,7 +59,6 @@ fn default_columns(count: usize) -> u32 {
 }
 
 fn grid_offset(index: usize, columns: u32) -> Vec3 {
-    const SPACING: f32 = 18.0;
     let col = (index as u32 % columns) as f32;
     let row = (index as u32 / columns) as f32;
     // Center the grid on the target point.

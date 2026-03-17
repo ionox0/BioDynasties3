@@ -52,7 +52,7 @@ pub mod movement {
     pub const LOOSE_SEPARATION_FORCE: f32 = 0.2; // Force for loose unit spacing
     pub const MEDIUM_SEPARATION_FORCE: f32 = 0.5; // Force for medium unit spacing
     pub const DIRECTION_THRESHOLD: f32 = 0.1; // Minimum direction length for rotation
-    pub const MAX_TURN_SPEED: f32 = 0.1; // Maximum turning speed per frame
+    pub const MAX_TURN_SPEED: f32 = 0.4; // Maximum turning speed per frame
     
     // Pathfinding constants  
     pub const PATH_CLEAR_THRESHOLD: f32 = 0.1; // Minimum distance for path clearance

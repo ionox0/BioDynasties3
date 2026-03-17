@@ -145,6 +145,13 @@ impl Plugin for CombatPlugin {
                     .chain()
                     .in_set(CombatSet)
                     .in_set(GameSet::RtsUpdate),
+            )
+            .add_systems(
+                Update,
+                (add_combat_state_to_fighters, update_combat_states)
+                    .chain()
+                    .after(CombatSet)
+                    .in_set(GameSet::RtsUpdate),
             );
     }
 }
@@ -371,21 +378,6 @@ fn apply_armor(base: f32, armor: f32, damage_type: &DamageType) -> f32 {
     base * (1.0 - reduction)
 }
 
-// ─── Combat state tracking (CombatStatePlugin) ───────────────────────────────
-
-pub struct CombatStatePlugin;
-
-impl Plugin for CombatStatePlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (add_combat_state_to_fighters, update_combat_states)
-                .chain()
-                .after(CombatSet)
-                .in_set(GameSet::RtsUpdate),
-        );
-    }
-}
 
 fn add_combat_state_to_fighters(
     mut commands: Commands,
