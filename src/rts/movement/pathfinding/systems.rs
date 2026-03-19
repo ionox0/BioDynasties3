@@ -12,6 +12,8 @@ use super::cache::{try_cached_path, update_path_cache};
 use super::grid::{PathfindingGridResource, TerrainPathfindingGrid};
 
 const PATHFINDING_RETRY_COOLDOWN: f32 = 2.0;
+const PATH_JITTER_RADIUS: f32 = 20.0;
+const PATH_JITTER_SPACING: usize = 25;
 
 /// Attached to a unit while an async A* search is in progress.
 /// Removed via `Commands` when the task completes or the unit's target changes.
@@ -60,7 +62,7 @@ pub fn request_paths(
 
         // Cache hit — apply immediately with no async overhead.
         if let Some(path) = try_cached_path(&grid_res.grid, &mut pf, raw_target, transform.translation, now) {
-            pf.path = path;
+            pf.path = jitter_path(path, entity);
             pf.path_index = 0;
             continue;
         }
@@ -105,7 +107,7 @@ pub fn poll_path_tasks(
                         update_path_cache(&mut pf, goal_grid, &path, now);
                     }
                 }
-                pf.path = path;
+                pf.path = jitter_path(path, entity);
                 pf.path_index = 0;
             }
             _ => {
@@ -114,4 +116,37 @@ pub fn poll_path_tasks(
             }
         }
     }
+}
+
+/// Builds a sparse path from the A* result so units in the same group take
+/// slightly different routes. One waypoint is kept per PATH_JITTER_SPACING
+/// interval and laterally offset by ±PATH_JITTER_RADIUS. Non-jittered
+/// intermediate waypoints are discarded so the unit travels straight between
+/// sparse points rather than snapping back to the original line.
+/// The clean path is cached before this is called.
+fn jitter_path(path: Vec<Vec3>, entity: Entity) -> Vec<Vec3> {
+    let len = path.len();
+    if len < 3 {
+        return path;
+    }
+    let mut result = vec![path[0]];
+    for i in (PATH_JITTER_SPACING..len - 1).step_by(PATH_JITTER_SPACING) {
+        let prev_i = i - PATH_JITTER_SPACING;
+        let next_i = (i + PATH_JITTER_SPACING).min(len - 1);
+        let dir = Vec3::new(
+            path[next_i].x - path[prev_i].x,
+            0.0,
+            path[next_i].z - path[prev_i].z,
+        )
+        .normalize_or_zero();
+        let lateral = Vec3::new(-dir.z, 0.0, dir.x);
+        let hash = entity
+            .index()
+            .wrapping_mul(2_654_435_761)
+            .wrapping_add((i as u32).wrapping_mul(1_234_567_891));
+        let offset = (hash % 3) as i32 - 1;
+        result.push(path[i] + lateral * (offset as f32 * PATH_JITTER_RADIUS));
+    }
+    result.push(path[len - 1]);
+    result
 }
