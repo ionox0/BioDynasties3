@@ -8,6 +8,7 @@ use noise::{NoiseFn, Perlin};
 use rand::random;
 use super::triplanar_mapping::SimpleMaterial;
 use tracing::instrument;
+use crate::core::constants::movement::TERRAIN_SIZE;
 
 // Enhanced terrain configuration for dramatic hills and varied landscapes with high granularity
 pub const NOISE_HEIGHT: f32 = 120.0; // Dramatic terrain height variation - 8x increase!
@@ -25,6 +26,40 @@ pub const ROCKY_TERRAIN_HEIGHT_THRESHOLD: f32 = 36.0;      // Above this = rocky
 #[derive(Resource)]
 pub struct MapSeed(pub u32);
 
+const NORMAL_GRID_RESOLUTION: usize = 256;
+
+/// Precomputed terrain normals on a 256×256 grid — O(1) lookup at runtime.
+#[derive(Resource)]
+pub struct TerrainNormals {
+    normals: Vec<Vec3>,
+    terrain_size: f32,
+}
+
+impl TerrainNormals {
+    fn build(terrain: &StaticTerrainHeights) -> Self {
+        let res = NORMAL_GRID_RESOLUTION;
+        let size = TERRAIN_SIZE;
+        let step = size * 2.0 / (res - 1) as f32;
+        let mut normals = Vec::with_capacity(res * res);
+        for z in 0..res {
+            for x in 0..res {
+                let wx = -size + x as f32 * step;
+                let wz = -size + z as f32 * step;
+                normals.push(Vec3::from(calculate_terrain_normal(wx, wz, step, terrain)));
+            }
+        }
+        Self { normals, terrain_size: size }
+    }
+
+    pub fn get_normal(&self, x: f32, z: f32) -> Vec3 {
+        let res = NORMAL_GRID_RESOLUTION;
+        let t = self.terrain_size;
+        let ix = ((x + t) / (t * 2.0) * (res - 1) as f32).clamp(0.0, (res - 1) as f32) as usize;
+        let iz = ((z + t) / (t * 2.0) * (res - 1) as f32).clamp(0.0, (res - 1) as f32) as usize;
+        self.normals[iz * res + ix]
+    }
+}
+
 pub struct StaticTerrainPlugin;
 
 impl Plugin for StaticTerrainPlugin {
@@ -32,8 +67,11 @@ impl Plugin for StaticTerrainPlugin {
     fn build(&self, app: &mut App) {
         let seed: u32 = random();
         info!("Map seed: {seed}");
+        let terrain = StaticTerrainHeights::from_seed(seed);
+        let normals = TerrainNormals::build(&terrain);
         app.insert_resource(MapSeed(seed))
-            .insert_resource(StaticTerrainHeights::from_seed(seed))
+            .insert_resource(terrain)
+            .insert_resource(normals)
             .insert_resource(DebugCounters::default())
             .add_systems(Update, (debug_system_update, check_textures_and_generate_terrain, debug_terrain_entities, immediate_entity_verification));
     }

@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::movement as mc;
 use crate::core::GameSet;
-use crate::world::static_terrain::StaticTerrainHeights;
+use crate::world::static_terrain::{StaticTerrainHeights, TerrainNormals};
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
 use self::pathfinding::{request_paths, poll_path_tasks};
 use self::pathfinding::systems::PathTask;
@@ -101,6 +101,7 @@ const PATHFINDING_GIVE_UP_SECS: f32 = 6.0;
 fn move_units(
     mut units: Query<(Entity, &mut Transform, &mut Movement, &mut PathfindingState, &RTSUnit)>,
     terrain: Res<StaticTerrainHeights>,
+    terrain_normals: Res<TerrainNormals>,
     time: Res<Time>,
     mut arrived: EventWriter<UnitArrivedEvent>,
 ) {
@@ -125,7 +126,7 @@ fn move_units(
             continue;
         }
         if let Some(dir) = step_path(&mut tf, &mut mv, &mut pf, &ctx) {
-            update_rotation(&mut tf, dir, rts_unit, ctx.dt);
+            update_rotation(&mut tf, dir, rts_unit, &terrain_normals, ctx.dt);
         }
         // target_position cleared inside step_path means path was exhausted — unit arrived.
         if mv.target_position.is_none() {
@@ -195,14 +196,14 @@ fn clamp_to_map(tf: &mut Transform) {
     tf.translation.z = tf.translation.z.clamp(-b, b);
 }
 
-/// Rotates the unit to face its direction of travel.
-fn update_rotation(tf: &mut Transform, dir: Vec3, rts_unit: &RTSUnit, dt: f32) {
+/// Rotates the unit to face its direction of travel, tilted to match the terrain normal.
+fn update_rotation(tf: &mut Transform, dir: Vec3, rts_unit: &RTSUnit, normals: &TerrainNormals, dt: f32) {
     if dir.length_squared() <= mc::DIRECTION_THRESHOLD * mc::DIRECTION_THRESHOLD {
         return;
     }
     // Fourmi/CairnsBirdwing GLBs face backward — negate the formula to compensate.
     // Dragonfly GLB is rotated 90° CCW from the forward direction.
-    let target_rot = match rts_unit.unit_type.as_ref() {
+    let yaw = match rts_unit.unit_type.as_ref() {
         Some(UnitType::Fourmi | UnitType::CairnsBirdwing) => {
             Quat::from_rotation_y(-dir.x.atan2(-dir.z))
         }
@@ -211,8 +212,10 @@ fn update_rotation(tf: &mut Transform, dir: Vec3, rts_unit: &RTSUnit, dt: f32) {
         }
         _ => Quat::from_rotation_y(dir.x.atan2(dir.z)),
     };
+    let normal = normals.get_normal(tf.translation.x, tf.translation.z);
+    let tilt = Quat::from_rotation_arc(Vec3::Y, normal);
     let turn = (mc::MAX_TURN_SPEED * dt * 10.0).min(1.0);
-    tf.rotation = tf.rotation.slerp(target_rot, turn);
+    tf.rotation = tf.rotation.slerp(tilt * yaw, turn);
 }
 
 /// Keeps `Position` in sync with `Transform` so spatial grid readers stay current.
