@@ -149,7 +149,7 @@ fn get_role_base_stats() -> HashMap<UnitRole, BaseStats> {
     stats.insert(UnitRole::Dps, BaseStats {
         health_multiplier: 0.9,
         damage_multiplier: 1.4,
-        speed_multiplier: 1.1,
+        speed_multiplier: 0.55,
         armor_base: 0.5,
         attack_type: AttackType::Melee,
         animation_speed: 1.2,

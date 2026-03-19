@@ -11,14 +11,16 @@ const INITIAL_CAMERA_LOOK_DISTANCE: f32 = 200.0;
 
 /// West edge: 85 % of MAP_BOUNDARY — player 1 spawn.
 const PLAYER_SPAWN: Vec3 = Vec3::new(-2550.0, 0.0, 0.0);
-/// East edge: 85 % of MAP_BOUNDARY — AI player 2 spawn.
-const AI_SPAWN: Vec3 = Vec3::new(2300.0, 0.0, 0.0);
+/// South-east corner — AI player 2 spawn.
+const AI_SPAWN_SE: Vec3 = Vec3::new(2550.0, 0.0, 2550.0);
+/// North-east corner — AI player 3 spawn.
+const AI_SPAWN_NE: Vec3 = Vec3::new(2550.0, 0.0, -2550.0);
 
 pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_scene, spawn_player_base, spawn_ai_base, scatter_map_resources, scatter_map_props))
+        app.add_systems(Startup, (setup_scene, spawn_player_base, spawn_ai_base_se, spawn_ai_base_ne, scatter_map_resources, scatter_map_props))
             .add_systems(Update, handle_rts_camera_input);
     }
 }
@@ -68,27 +70,26 @@ fn scatter_map_resources(
     }
 }
 
-/// Spawns the initial AI base and one worker ant (player_id = 2) at the east edge.
-fn spawn_ai_base(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut stockpiles: ResMut<Stockpiles>,
-    terrain: Res<StaticTerrainHeights>,
-) {
-    *stockpiles.get_or_insert_mut(2) = Stockpile::starting();
+struct AiBaseConfig {
+    player_id: u8,
+    spawn: Vec3,
+}
 
-    let passable = terrain.find_passable_near(Vec2::new(AI_SPAWN.x, AI_SPAWN.z));
+fn do_spawn_ai_base(commands: &mut Commands, asset_server: &AssetServer, stockpiles: &mut Stockpiles, terrain: &StaticTerrainHeights, cfg: AiBaseConfig) {
+    *stockpiles.get_or_insert_mut(cfg.player_id) = Stockpile::starting();
+
+    let passable = terrain.find_passable_near(Vec2::new(cfg.spawn.x, cfg.spawn.z));
     let ground_y = terrain.get_height(passable.x, passable.y);
     let base_pos = Vec3::new(passable.x, ground_y, passable.y);
 
-    EntityFactory::spawn_building(&mut commands, &asset_server, BuildingType::Queen, base_pos, 2);
+    EntityFactory::spawn_building(commands, asset_server, BuildingType::Queen, base_pos, cfg.player_id);
 
     let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
     let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
     commands.spawn((
         SceneRoot(asset_server.load("models/insects/good/fourmi.glb#Scene0")),
         Transform::from_translation(worker_pos).with_scale(Vec3::splat(3.75)),
-        RTSUnit { player_id: 2, unit_type: Some(UnitType::Fourmi) },
+        RTSUnit { player_id: cfg.player_id, unit_type: Some(UnitType::Fourmi) },
         Movement { max_speed: 80.0, current_velocity: Vec3::ZERO, target_position: None },
         PathfindingState::default(),
         Position { translation: worker_pos },
@@ -105,6 +106,16 @@ fn spawn_ai_base(
     ));
 }
 
+/// Spawns AI player 2's base at the south-east corner.
+fn spawn_ai_base_se(mut commands: Commands, asset_server: Res<AssetServer>, mut stockpiles: ResMut<Stockpiles>, terrain: Res<StaticTerrainHeights>) {
+    do_spawn_ai_base(&mut commands, &asset_server, &mut stockpiles, &terrain, AiBaseConfig { player_id: 2, spawn: AI_SPAWN_SE });
+}
+
+/// Spawns AI player 3's base at the north-east corner.
+fn spawn_ai_base_ne(mut commands: Commands, asset_server: Res<AssetServer>, mut stockpiles: ResMut<Stockpiles>, terrain: Res<StaticTerrainHeights>) {
+    do_spawn_ai_base(&mut commands, &asset_server, &mut stockpiles, &terrain, AiBaseConfig { player_id: 3, spawn: AI_SPAWN_NE });
+}
+
 // ─── Resource scatter helpers ────────────────────────────────────────────────
 
 /// Generates 50 passable positions spread across the full map, avoiding spawn bases.
@@ -114,7 +125,7 @@ fn resource_scatter_positions(terrain: &StaticTerrainHeights) -> Vec<Vec3> {
     const MIN_FROM_BASE: f32 = 300.0;
     const EXTENT: f32 = 2550.0;
 
-    let base_xz = [Vec2::new(-EXTENT, 0.0), Vec2::new(EXTENT, 0.0)];
+    let base_xz = [Vec2::new(-EXTENT, 0.0), Vec2::new(EXTENT, EXTENT), Vec2::new(EXTENT, -EXTENT)];
     let mut positions: Vec<Vec3> = Vec::with_capacity(TOTAL);
     let mut seed = 0xDEAD_BEEFu64;
 
@@ -167,7 +178,7 @@ fn scatter_map_props(
         PropType::TermiteMoundSmall,
         PropType::WoodStick,
     ];
-    let base_xz = [Vec2::new(-EXTENT, 0.0), Vec2::new(EXTENT, 0.0)];
+    let base_xz = [Vec2::new(-EXTENT, 0.0), Vec2::new(EXTENT, EXTENT), Vec2::new(EXTENT, -EXTENT)];
     let mut positions: Vec<Vec3> = Vec::with_capacity(TOTAL);
     let mut seed = 0xC0FFEE42u64;
 
