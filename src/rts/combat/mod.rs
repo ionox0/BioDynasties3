@@ -66,7 +66,7 @@ pub(crate) struct CombatUnits<'w, 's> {
 
 #[derive(SystemParam)]
 pub(crate) struct AttackingUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, &'static CollisionRadius)>,
+    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, &'static CollisionRadius, Option<&'static Movement>)>,
 }
 
 #[derive(SystemParam)]
@@ -92,7 +92,6 @@ mod cc {
     pub const TARGET_POSITION_RATIO: f32 = 0.7;
     pub const GRID_CELL_SIZE: f32 = 150.0;
     pub const VISION_RANGE: f32 = 120.0;
-    pub const MOVE_RETARGET_THRESHOLD_RATIO: f32 = 1.0;
 }
 
 // ─── Spatial target grid ─────────────────────────────────────────────────────
@@ -195,7 +194,6 @@ fn combat_stop_handler(
         combat.target = None;
         combat.is_attacking = false;
         combat.auto_attack = false;
-        combat.move_dest = None;
     }
 }
 
@@ -254,16 +252,14 @@ fn combat_execution_system(
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (attacker, mut combat, atf, _unit, acol) in attackers.query.iter_mut() {
+    for (attacker, mut combat, atf, _unit, acol, movement) in attackers.query.iter_mut() {
         let Some(target) = combat.target else {
             combat.is_attacking = false;
-            combat.move_dest = None;
             continue;
         };
         let Ok((ttf, tcol)) = targets.query.get(target) else {
             combat.target = None;
             combat.is_attacking = false;
-            combat.move_dest = None;
             continue;
         };
 
@@ -272,18 +268,14 @@ fn combat_execution_system(
         if edge_dist > combat.attack_range * cc::ATTACK_RANGE_MARGIN {
             let dir = (ttf.translation - atf.translation).normalize();
             let dest = ttf.translation - dir * (combat.attack_range * cc::TARGET_POSITION_RATIO);
-            let needs_move = combat.move_dest.map_or(true, |prev| {
-                prev.distance(dest) > combat.attack_range * cc::MOVE_RETARGET_THRESHOLD_RATIO
-            });
+            let needs_move = movement.map_or(true, |m| m.target_position.is_none());
             if needs_move {
                 move_events.send(MovementTargetEvent { entity: attacker, target_position: dest });
-                combat.move_dest = Some(dest);
             }
             combat.is_attacking = false;
         } else {
             // In effective range: stop and attack.
             stop_events.send(StopMovementEvent { entity: attacker });
-            combat.move_dest = None;
             if now - combat.last_attack_time >= combat.attack_cooldown {
                 combat.last_attack_time = now;
                 combat.is_attacking = true;

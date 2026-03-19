@@ -73,6 +73,7 @@ fn scatter_map_resources(
 struct AiBaseConfig {
     player_id: u8,
     spawn: Vec3,
+    worker_type: UnitType,
 }
 
 fn do_spawn_ai_base(commands: &mut Commands, asset_server: &AssetServer, stockpiles: &mut Stockpiles, terrain: &StaticTerrainHeights, cfg: AiBaseConfig) {
@@ -86,17 +87,17 @@ fn do_spawn_ai_base(commands: &mut Commands, asset_server: &AssetServer, stockpi
 
     let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
     let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
-    EntityFactory::spawn_unit(commands, asset_server, UnitType::Fourmi, worker_pos, cfg.player_id);
+    EntityFactory::spawn_unit(commands, asset_server, cfg.worker_type, worker_pos, cfg.player_id);
 }
 
 /// Spawns AI player 2's base at the south-east corner.
 fn spawn_ai_base_se(mut commands: Commands, asset_server: Res<AssetServer>, mut stockpiles: ResMut<Stockpiles>, terrain: Res<StaticTerrainHeights>) {
-    do_spawn_ai_base(&mut commands, &asset_server, &mut stockpiles, &terrain, AiBaseConfig { player_id: 2, spawn: AI_SPAWN_SE });
+    do_spawn_ai_base(&mut commands, &asset_server, &mut stockpiles, &terrain, AiBaseConfig { player_id: 2, spawn: AI_SPAWN_SE, worker_type: UnitType::Bee });
 }
 
 /// Spawns AI player 3's base at the north-east corner.
 fn spawn_ai_base_ne(mut commands: Commands, asset_server: Res<AssetServer>, mut stockpiles: ResMut<Stockpiles>, terrain: Res<StaticTerrainHeights>) {
-    do_spawn_ai_base(&mut commands, &asset_server, &mut stockpiles, &terrain, AiBaseConfig { player_id: 3, spawn: AI_SPAWN_NE });
+    do_spawn_ai_base(&mut commands, &asset_server, &mut stockpiles, &terrain, AiBaseConfig { player_id: 3, spawn: AI_SPAWN_NE, worker_type: UnitType::Fourmi });
 }
 
 // ─── Resource scatter helpers ────────────────────────────────────────────────

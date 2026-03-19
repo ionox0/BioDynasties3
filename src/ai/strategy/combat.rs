@@ -18,7 +18,7 @@ pub(crate) struct CombatParams<'w, 's> {
     pub(crate) player_units: Query<
         'w,
         's,
-        (Entity, &'static RTSUnit),
+        (Entity, &'static RTSUnit, &'static UnitState),
         (With<RTSHealth>, Without<Dying>, Without<Building>),
     >,
 }
@@ -48,6 +48,6 @@ pub fn generate_combat_goals(goals: &mut GlobalGoalManager, params: &CombatParam
 
 fn find_enemy_target(attacker_id: u8, params: &CombatParams) -> Option<Entity> {
     params.player_units.iter()
-        .find(|(_, u)| u.player_id != attacker_id)
-        .map(|(e, _)| e)
+        .find(|(_, u, state)| u.player_id != attacker_id && **state == UnitState::Idle)
+        .map(|(e, _, _)| e)
 }

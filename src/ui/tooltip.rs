@@ -270,13 +270,14 @@ fn build_tooltip_content(
     }
 
     if let Ok(pf) = unit_data.pathfinding_query.get(entity) {
-        let waypoints = pf.path.len().saturating_sub(pf.path_index);
+        let total = pf.path.len();
+        let reached = pf.path.len().saturating_sub(pf.path_index);
         let failure = if pf.last_pathfinding_failure.is_finite() {
             format!("fail@{:.1}s", pf.last_pathfinding_failure)
         } else {
             "ok".to_string()
         };
-        text.push_str(&format!("\nPath: {waypoints} waypoints ({failure})"));
+        text.push_str(&format!("\nPath: {reached} / {total} waypoints ({failure})"));
     }
 
     Some((text, unit.player_id))

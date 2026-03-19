@@ -49,9 +49,6 @@ pub struct Combat {
     pub attack_type: AttackType,
     pub is_attacking: bool,
     pub auto_attack: bool,
-    /// Last movement destination issued to the movement system.
-    /// None when the unit is not actively chasing a target.
-    pub move_dest: Option<Vec3>,
 }
 
 impl Default for Combat {
@@ -65,7 +62,6 @@ impl Default for Combat {
             attack_type: AttackType::Melee,
             is_attacking: false,
             auto_attack: false,
-            move_dest: None,
         }
     }
 }

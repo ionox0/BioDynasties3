@@ -39,4 +39,6 @@ Ideas:
 
 - random seed for map generation
 
+- AI should not queue more goals for unit production than they have resources for
+
 - 

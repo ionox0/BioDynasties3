@@ -22,7 +22,14 @@ pub fn generate_production_goals(goals: &mut GlobalGoalManager, params: &Product
         if *player_id < 2 {
             continue;
         }
-        push_unit_goals(goals, &params.buildings, *player_id, stockpile.nectar);
+        push_unit_goals(goals, &params.buildings, *player_id, stockpile.nectar, worker_type_for_player(*player_id));
+    }
+}
+
+fn worker_type_for_player(player_id: u8) -> UnitType {
+    match player_id {
+        2 => UnitType::Bee,
+        _ => UnitType::Fourmi,
     }
 }
 
@@ -31,8 +38,8 @@ fn push_unit_goals(
     buildings: &Query<(Entity, &Building), With<ProductionQueue>>,
     player_id: u8,
     available_nectar: f32,
+    worker_type: UnitType,
 ) {
-    let worker_type = UnitType::Fourmi;
     if available_nectar >= worker_type.build_cost_nectar() {
         if let Some(entity) = find_building(buildings, player_id, worker_type.required_building()) {
             for _ in 0..WORKERS_PER_EVAL {

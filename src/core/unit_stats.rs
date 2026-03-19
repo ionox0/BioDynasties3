@@ -89,7 +89,10 @@ fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
     let attack_range = collision_radius + base_range;
     let health = BASE_HEALTH * base.health_multiplier;
     let damage = BASE_DAMAGE * base.damage_multiplier;
-    let speed = BASE_SPEED * base.speed_multiplier;
+    let speed = BASE_SPEED * base.speed_multiplier * match unit_type {
+        UnitType::Bee => 2.0,
+        _ => 1.0,
+    };
 
     UnitStatsConfig {
         health: HealthStats {
