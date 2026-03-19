@@ -1,5 +1,7 @@
 # Claude Code Guidelines
 
+- Always make changes with as little code as possible, preferring to remove code when possible. 
+
 ## Code Style
 
 ### Clippy

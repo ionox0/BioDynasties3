@@ -12,9 +12,9 @@ pub mod formation;
 pub mod formation_events;
 pub mod pathfinding;
 pub mod unit_commands;
-pub mod unstuck;
 
 use bevy::prelude::*;
+use hashbrown::HashMap;
 use crate::core::components::*;
 use crate::core::constants::movement as mc;
 use crate::core::GameSet;
@@ -22,7 +22,6 @@ use crate::world::static_terrain::{StaticTerrainHeights, TerrainNormals};
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
 use self::pathfinding::{request_paths, poll_path_tasks};
 use self::pathfinding::systems::PathTask;
-use self::unstuck::{add_stuck_detection, unstuck_system};
 
 pub struct MovementPlugin;
 
@@ -34,14 +33,12 @@ impl Plugin for MovementPlugin {
             .add_systems(
                 Update,
                 (
-                    add_stuck_detection,
                     stop_unit_movement,
                     apply_movement_targets,
                     request_paths,
                     poll_path_tasks,
                     move_units,
                     sync_position_component,
-                    unstuck_system,
                 )
                     .chain()
                     .in_set(GameSet::RtsUpdate),
@@ -95,25 +92,34 @@ struct StepCtx<'a> {
 
 /// Give up waiting for a path after this many seconds of consecutive failures.
 const PATHFINDING_GIVE_UP_SECS: f32 = 6.0;
+/// Frames a unit must be stuck at the same waypoint before skipping ahead.
+const STUCK_FRAME_THRESHOLD: u32 = 60;
 
 /// Moves all units each frame, following their A* path.
 /// Fires `UnitArrivedEvent` when a unit exhausts its path and clears its target.
+///
+/// `stuck_tracker` maps each entity to the number of consecutive frames it has
+/// remained on the same waypoint. When the threshold is reached the unit skips
+/// two waypoints, keeping its original destination intact.
 fn move_units(
     mut units: Query<(Entity, &mut Transform, &mut Movement, &mut PathfindingState, &RTSUnit)>,
     terrain: Res<StaticTerrainHeights>,
     terrain_normals: Res<TerrainNormals>,
     time: Res<Time>,
     mut arrived: EventWriter<UnitArrivedEvent>,
+    mut stuck_tracker: Local<HashMap<Entity, u32>>,
 ) {
-    let now = time.elapsed_secs();
-    let ctx = StepCtx { terrain: &terrain, dt: time.delta_secs().min(0.033) };
+    let dt = time.delta_secs().min(0.033);
+    let ctx = StepCtx { terrain: &terrain, dt };
     for (entity, mut tf, mut mv, mut pf, rts_unit) in units.iter_mut() {
         if mv.target_position.is_none() {
             mv.current_velocity = Vec3::ZERO;
             snap_to_terrain(&mut tf, ctx.terrain);
+            stuck_tracker.remove(&entity);
             continue;
         }
         // Give up if pathfinding has been failing too long with no path to follow.
+        let now = time.elapsed_secs();
         if pf.path.is_empty()
             && pf.last_pathfinding_failure.is_finite()
             && now - pf.last_pathfinding_failure > PATHFINDING_GIVE_UP_SECS
@@ -123,14 +129,35 @@ fn move_units(
             pf.path_index = 0;
             pf.last_pathfinding_failure = f32::NEG_INFINITY;
             arrived.send(UnitArrivedEvent { entity });
+            stuck_tracker.remove(&entity);
             continue;
         }
+        let prev_index = pf.path_index;
         if let Some(dir) = step_path(&mut tf, &mut mv, &mut pf, &ctx) {
-            update_rotation(&mut tf, dir, rts_unit, &terrain_normals, ctx.dt);
+            update_rotation(&mut tf, dir, rts_unit, &terrain_normals, dt);
         }
         // target_position cleared inside step_path means path was exhausted — unit arrived.
         if mv.target_position.is_none() {
             arrived.send(UnitArrivedEvent { entity });
+            stuck_tracker.remove(&entity);
+            continue;
+        }
+        // Track stuck state: only when we have a live path and didn't just advance.
+        if !pf.path.is_empty() {
+            if pf.path_index > prev_index {
+                stuck_tracker.remove(&entity);
+            } else {
+                let count = stuck_tracker.entry(entity).or_insert(0);
+                *count += 1;
+                if *count >= STUCK_FRAME_THRESHOLD {
+                    // Skip 2 waypoints ahead without changing the destination.
+                    pf.path_index = (pf.path_index + 2).min(pf.path.len());
+                    stuck_tracker.remove(&entity);
+                }
+            }
+        } else {
+            // Waiting for a path — don't count as stuck.
+            stuck_tracker.remove(&entity);
         }
     }
 }
@@ -158,7 +185,7 @@ fn step_path(
             pf.path.clear();
             pf.path_index = 0;
         }
-        // path is empty → waiting for pathfinding_system to compute one.
+        // path is empty → waiting for pathfinding system to compute one.
         return None;
     }
 
@@ -187,7 +214,8 @@ fn flat_dir(from: Vec3, to: Vec3) -> Vec3 {
 }
 
 fn snap_to_terrain(tf: &mut Transform, terrain: &StaticTerrainHeights) {
-    tf.translation.y = terrain.get_height(tf.translation.x, tf.translation.z) + mc::DEFAULT_SPAWN_HEIGHT;
+    tf.translation.y =
+        terrain.get_height(tf.translation.x, tf.translation.z) + mc::DEFAULT_SPAWN_HEIGHT;
 }
 
 fn clamp_to_map(tf: &mut Transform) {
@@ -197,7 +225,13 @@ fn clamp_to_map(tf: &mut Transform) {
 }
 
 /// Rotates the unit to face its direction of travel, tilted to match the terrain normal.
-fn update_rotation(tf: &mut Transform, dir: Vec3, rts_unit: &RTSUnit, normals: &TerrainNormals, dt: f32) {
+fn update_rotation(
+    tf: &mut Transform,
+    dir: Vec3,
+    rts_unit: &RTSUnit,
+    normals: &TerrainNormals,
+    dt: f32,
+) {
     if dir.length_squared() <= mc::DIRECTION_THRESHOLD * mc::DIRECTION_THRESHOLD {
         return;
     }
