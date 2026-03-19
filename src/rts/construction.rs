@@ -1,6 +1,7 @@
 use crate::core::components::*;
 use crate::entities::entity_factory::EntityFactory;
 use crate::world::building_grid::BuildingGrid;
+use crate::world::static_terrain::TerrainNormals;
 use bevy::prelude::*;
 use tracing::instrument;
 
@@ -15,7 +16,9 @@ impl Plugin for ConstructionPlugin {
             .add_systems(
                 Update,
                 (construction_system, apply_construction_progress, building_spawn_handler).chain(),
-            );
+            )
+            .add_observer(apply_terrain_tilt_to_building)
+            .add_observer(apply_terrain_tilt_to_resource);
     }
 }
 
@@ -134,4 +137,24 @@ pub fn apply_construction_progress(
             building.is_complete = true;
         }
     }
+}
+
+fn apply_terrain_tilt_to_building(
+    trigger: Trigger<OnAdd, Building>,
+    mut transforms: Query<&mut Transform>,
+    normals: Res<TerrainNormals>,
+) {
+    let Ok(mut tf) = transforms.get_mut(trigger.entity()) else { return };
+    let normal = normals.get_normal(tf.translation.x, tf.translation.z);
+    tf.rotation = Quat::from_rotation_arc(Vec3::Y, normal);
+}
+
+fn apply_terrain_tilt_to_resource(
+    trigger: Trigger<OnAdd, ResourceSource>,
+    mut transforms: Query<&mut Transform>,
+    normals: Res<TerrainNormals>,
+) {
+    let Ok(mut tf) = transforms.get_mut(trigger.entity()) else { return };
+    let normal = normals.get_normal(tf.translation.x, tf.translation.z);
+    tf.rotation = Quat::from_rotation_arc(Vec3::Y, normal);
 }

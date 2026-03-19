@@ -36,21 +36,7 @@ fn spawn_player_base(
     let ground_y = terrain.get_height(passable.x, passable.y);
     let base_pos = Vec3::new(passable.x, ground_y, passable.y);
 
-    commands.spawn((
-        SceneRoot(asset_server.load("models/objects/anthill.glb#Scene0")),
-        Transform::from_translation(base_pos).with_scale(Vec3::splat(20.0)),
-        Building {
-            player_id: 1,
-            building_type: BuildingType::Queen,
-            construction_progress: 100.0,
-            max_construction: 100.0,
-            is_complete: true,
-        },
-        Position { translation: base_pos },
-        CollisionRadius { radius: 20.0 },
-        Selectable { is_selected: false, selection_radius: 10.0 },
-        ProductionQueue::default(),
-    ));
+    EntityFactory::spawn_building(&mut commands, &asset_server, BuildingType::Queen, base_pos, 1);
 
     let worker_offsets = [
         Vec3::new(60.0, 1.0, 0.0),
@@ -74,8 +60,8 @@ fn scatter_map_resources(
         let rt = resource_type_for_index(i);
         let amount = resource_amount(&rt);
         commands.spawn((
-            SceneRoot(asset_server.load("models/objects/pine_cone.glb#Scene0")),
-            Transform::from_translation(pos).with_scale(Vec3::splat(10.0)),
+            SceneRoot(asset_server.load("models/objects/crystal_stone_rock.glb#Scene0")),
+            Transform::from_translation(pos).with_scale(Vec3::splat(70.0)),
             ResourceSource { resource_type: rt, amount },
             CollisionRadius { radius: 8.0 },
         ));
@@ -95,21 +81,7 @@ fn spawn_ai_base(
     let ground_y = terrain.get_height(passable.x, passable.y);
     let base_pos = Vec3::new(passable.x, ground_y, passable.y);
 
-    commands.spawn((
-        SceneRoot(asset_server.load("models/objects/anthill.glb#Scene0")),
-        Transform::from_translation(base_pos).with_scale(Vec3::splat(20.0)),
-        Building {
-            player_id: 2,
-            building_type: BuildingType::Queen,
-            construction_progress: 100.0,
-            max_construction: 100.0,
-            is_complete: true,
-        },
-        Position { translation: base_pos },
-        CollisionRadius { radius: 20.0 },
-        Selectable { is_selected: false, selection_radius: 10.0 },
-        ProductionQueue::default(),
-    ));
+    EntityFactory::spawn_building(&mut commands, &asset_server, BuildingType::Queen, base_pos, 2);
 
     let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
     let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);

@@ -70,6 +70,7 @@ pub fn request_paths(
         let terrain = grid_res.terrain.clone();
         let start = transform.translation;
         let task = task_pool.spawn(async move {
+            let start = grid.find_nearest_passable(start, &terrain).unwrap_or(start);
             let target = resolve_target(raw_target, &grid, &terrain)?;
             grid.find_path(start, target, &terrain)
         });

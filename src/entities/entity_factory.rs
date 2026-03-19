@@ -205,7 +205,8 @@ fn unit_model_rotation(unit_type: &UnitType) -> Quat {
 
 fn unit_model_scale(unit_type: &UnitType) -> f32 {
     match unit_type {
-        UnitType::Fourmi | UnitType::Bee => 3.75,
+        UnitType::Fourmi => 3.75,
+        UnitType::Bee => 0.75,
         UnitType::CairnsBirdwing => 18.75,
         UnitType::Dragonfly => 100.0,
         UnitType::RolyPoly => 0.3,
