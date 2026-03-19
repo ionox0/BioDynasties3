@@ -1,5 +1,6 @@
 //! Building goal generation — spawns new AI buildings when needed.
 
+use std::collections::HashMap;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use rand::Rng;
@@ -26,33 +27,25 @@ pub(crate) struct BuildingParams<'w, 's> {
 /// Placement is offset from a randomly chosen existing AI building so the base
 /// can expand outward rather than always clustering around the Queen.
 pub fn generate_building_goals(goals: &mut GlobalGoalManager, params: &BuildingParams) {
-    let ai_buildings: Vec<Vec3> = params
-        .buildings
-        .iter()
-        .filter(|(_, b, _)| b.player_id == 2)
-        .map(|(_, _, tf)| tf.translation)
-        .collect();
-
-    if ai_buildings.is_empty() {
-        return;
+    let mut by_player: HashMap<u8, Vec<Vec3>> = HashMap::new();
+    for (_, b, tf) in params.buildings.iter() {
+        if b.player_id >= 2 {
+            by_player.entry(b.player_id).or_default().push(tf.translation);
+        }
     }
 
-    goals.push(
-        NURSERY_PRIORITY,
-        UnifiedGoal::BuildBuilding {
+    for (player_id, positions) in &by_player {
+        goals.push(NURSERY_PRIORITY, UnifiedGoal::BuildBuilding {
             building_type: BuildingType::Nursery,
-            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain, &params.building_grid),
-            player_id: 2,
-        },
-    );
-    goals.push(
-        WARRIOR_CHAMBER_PRIORITY,
-        UnifiedGoal::BuildBuilding {
+            position: placement_near_random(positions, BUILDING_PLACEMENT_RADIUS, &params.terrain, &params.building_grid),
+            player_id: *player_id,
+        });
+        goals.push(WARRIOR_CHAMBER_PRIORITY, UnifiedGoal::BuildBuilding {
             building_type: BuildingType::WarriorChamber,
-            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain, &params.building_grid),
-            player_id: 2,
-        },
-    );
+            position: placement_near_random(positions, BUILDING_PLACEMENT_RADIUS, &params.terrain, &params.building_grid),
+            player_id: *player_id,
+        });
+    }
 }
 
 fn placement_near_random(buildings: &[Vec3], radius: f32, terrain: &StaticTerrainHeights, building_grid: &BuildingGrid) -> Vec3 {
