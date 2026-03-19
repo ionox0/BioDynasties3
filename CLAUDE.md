@@ -1,6 +1,7 @@
 # Claude Code Guidelines
 
 - Always make changes with as little code as possible, preferring to remove code when possible. 
+- When ambiguity is present in prompt, prefer shorter, terser, simpler solutions. 
 
 ## Code Style
 

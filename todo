@@ -41,4 +41,8 @@ Ideas:
 
 - AI should not queue more goals for unit production than they have resources for
 
+- use normals to prevent buildings from being placed on tilted terrain
+
+- rotate terrain texture tiles to avoid repetition
+
 - 

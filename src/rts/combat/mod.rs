@@ -109,7 +109,7 @@ impl Default for TargetGrid {
 }
 
 impl TargetGrid {
-    fn query_nearby(&self, position: Vec3, range: f32) -> Vec<(Entity, Vec3, u8)> {
+    pub fn query_nearby(&self, position: Vec3, range: f32) -> Vec<(Entity, Vec3, u8)> {
         self.0
             .query_nearby_with_keys(position)
             .into_iter()
