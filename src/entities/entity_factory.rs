@@ -209,7 +209,7 @@ fn unit_model_scale(unit_type: &UnitType) -> f32 {
         UnitType::CairnsBirdwing => 18.75,
         UnitType::Dragonfly => 100.0,
         UnitType::RolyPoly => 0.3,
-        UnitType::Scorpion => 20.0,
+        UnitType::Scorpion => 10.0,
         UnitType::GoliathBirdeater => 1.5,
         UnitType::RhinoBeetle => 10.0,
     }

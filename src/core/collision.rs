@@ -94,11 +94,11 @@ mod constants {
     pub const PUSH_MULTIPLIER: f32 = 0.3;
     pub const UNIT_OVERLAP_THRESHOLD: f32 = 0.8;
     pub const CONVERGENCE_THRESHOLD: f32 = 2.0;
-    pub const CONVERGING_FORCE: f32 = 3.0;
-    pub const MOVING_FORCE: f32 = 1.0;
-    pub const STATIONARY_FORCE: f32 = 0.5;
-    pub const SERIOUS_UNIT_OVERLAP_RATIO: f32 = 0.6;
-    pub const GENTLE_PUSH_MULTIPLIER: f32 = 0.05;
+    pub const CONVERGING_FORCE: f32 = 60.0;
+    pub const MOVING_FORCE: f32 = 30.0;
+    pub const STATIONARY_FORCE: f32 = 15.0;
+    pub const SERIOUS_UNIT_OVERLAP_RATIO: f32 = 0.1;
+    pub const GENTLE_PUSH_MULTIPLIER: f32 = 0.3;
     pub const MIN_AVOIDANCE_MAGNITUDE: f32 = 0.1;
     pub const VELOCITY_ADJUSTMENT_FACTOR: f32 = 0.3;
     pub const MAX_SPEED_MULTIPLIER: f32 = 1.2;

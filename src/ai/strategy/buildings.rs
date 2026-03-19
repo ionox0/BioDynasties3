@@ -4,19 +4,21 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use rand::Rng;
 use crate::core::components::{Building, BuildingType};
+use crate::world::building_grid::BuildingGrid;
 use crate::world::static_terrain::StaticTerrainHeights;
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
-/// Radius from the AI Queen at which new buildings are placed.
-pub const BUILDING_PLACEMENT_RADIUS: f32 = 160.0;
+/// Radius from the chosen anchor building at which new buildings are placed.
+pub const BUILDING_PLACEMENT_RADIUS: f32 = 280.0;
 
-const NURSERY_PRIORITY: f32 = 30.0;
-const WARRIOR_CHAMBER_PRIORITY: f32 = 45.0;
+const NURSERY_PRIORITY: f32 = 10.0;
+const WARRIOR_CHAMBER_PRIORITY: f32 = 15.0;
 
 #[derive(SystemParam)]
 pub(crate) struct BuildingParams<'w, 's> {
     buildings: Query<'w, 's, (Entity, &'static Building, &'static Transform)>,
     terrain: Res<'w, StaticTerrainHeights>,
+    building_grid: Res<'w, BuildingGrid>,
 }
 
 /// Pushes `BuildBuilding` goals for Nursery and WarriorChamber on each eval tick.
@@ -39,7 +41,7 @@ pub fn generate_building_goals(goals: &mut GlobalGoalManager, params: &BuildingP
         NURSERY_PRIORITY,
         UnifiedGoal::BuildBuilding {
             building_type: BuildingType::Nursery,
-            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain),
+            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain, &params.building_grid),
             player_id: 2,
         },
     );
@@ -47,21 +49,24 @@ pub fn generate_building_goals(goals: &mut GlobalGoalManager, params: &BuildingP
         WARRIOR_CHAMBER_PRIORITY,
         UnifiedGoal::BuildBuilding {
             building_type: BuildingType::WarriorChamber,
-            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain),
+            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain, &params.building_grid),
             player_id: 2,
         },
     );
 }
 
-fn placement_near_random(buildings: &[Vec3], radius: f32, terrain: &StaticTerrainHeights) -> Vec3 {
+fn placement_near_random(buildings: &[Vec3], radius: f32, terrain: &StaticTerrainHeights, building_grid: &BuildingGrid) -> Vec3 {
     let idx = rand::thread_rng().gen_range(0..buildings.len());
-    placement_position(buildings[idx], radius, terrain)
+    placement_position(buildings[idx], radius, terrain, building_grid)
 }
 
-fn placement_position(origin: Vec3, radius: f32, terrain: &StaticTerrainHeights) -> Vec3 {
+fn placement_position(origin: Vec3, radius: f32, terrain: &StaticTerrainHeights, building_grid: &BuildingGrid) -> Vec3 {
     let angle = rand::thread_rng().gen_range(0.0..std::f32::consts::TAU);
-    let candidate = Vec2::new(origin.x + angle.cos() * radius, origin.z + angle.sin() * radius);
-    let passable = terrain.find_passable_near(candidate);
+    let candidate = Vec3::new(origin.x + angle.cos() * radius, 0.0, origin.z + angle.sin() * radius);
+    if let Some(pos) = building_grid.find_clear_position(candidate, terrain) {
+        return pos;
+    }
+    let passable = terrain.find_passable_near(candidate.xz());
     let y = terrain.get_height(passable.x, passable.y);
     Vec3::new(passable.x, y, passable.y)
 }

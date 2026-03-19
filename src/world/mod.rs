@@ -1,3 +1,5 @@
+/// Building occupancy grid for spawn/placement clearance
+pub mod building_grid;
 /// Debug grid overlay
 pub mod grid;
 /// Static terrain system for RTS gameplay

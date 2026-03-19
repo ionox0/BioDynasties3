@@ -28,6 +28,16 @@ impl BuildingType {
         }
     }
 
+    /// Radius (world units) that must be clear of other buildings and passable terrain
+    /// before a unit can spawn or a new building can be placed nearby.
+    pub fn exclusion_radius(&self) -> f32 {
+        match self {
+            BuildingType::Queen          => 42.0,  // collision 12 + 30 buffer
+            BuildingType::Nursery        => 38.0,  // collision  8 + 30 buffer
+            BuildingType::WarriorChamber => 40.0,  // collision 10 + 30 buffer
+        }
+    }
+
     /// Nectar cost to place this building.
     pub fn build_cost_nectar(&self) -> f32 {
         match self {

@@ -10,10 +10,18 @@
 //! | `ProductionQueue.queued`  | `apply_production_queue_events`| Event         |
 //! | `ProductionQueue.progress`| `production_queue_system`      | Direct write  |
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::entities::entity_factory::EntityFactory;
+use crate::world::building_grid::BuildingGrid;
 use crate::world::static_terrain::StaticTerrainHeights;
+
+#[derive(SystemParam)]
+struct SpawnAccess<'w> {
+    terrain: Res<'w, StaticTerrainHeights>,
+    building_grid: Res<'w, BuildingGrid>,
+}
 
 pub struct ProductionPlugin;
 
@@ -51,7 +59,7 @@ fn production_queue_system(
     mut buildings: Query<(&Building, &Transform, &mut ProductionQueue)>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    terrain: Res<StaticTerrainHeights>,
+    spawn: SpawnAccess,
 ) {
     for (building, tf, mut queue) in buildings.iter_mut() {
         let Some(unit_type) = queue.queued.first().cloned() else { continue };
@@ -60,8 +68,12 @@ fn production_queue_system(
         queue.progress -= queue.production_time;
         queue.queued.remove(0);
         let raw = tf.translation + Vec3::new(30.0, 0.0, 0.0);
-        let passable = terrain.find_passable_near(Vec2::new(raw.x, raw.z));
-        let spawn_y = terrain.get_height(passable.x, passable.y) + 1.0;
-        EntityFactory::spawn_unit(&mut commands, &asset_server, unit_type, Vec3::new(passable.x, spawn_y, passable.y), building.player_id);
+        let pos = spawn.building_grid
+            .find_clear_position(raw, &spawn.terrain)
+            .unwrap_or_else(|| {
+                let p = spawn.terrain.find_passable_near(raw.xz());
+                Vec3::new(p.x, spawn.terrain.get_height(p.x, p.y), p.y)
+            });
+        EntityFactory::spawn_unit(&mut commands, &asset_server, unit_type, pos, building.player_id);
     }
 }

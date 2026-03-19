@@ -1,5 +1,6 @@
 use crate::core::components::*;
 use crate::entities::entity_factory::EntityFactory;
+use crate::world::building_grid::BuildingGrid;
 use bevy::prelude::*;
 use tracing::instrument;
 
@@ -7,7 +8,8 @@ pub struct ConstructionPlugin;
 
 impl Plugin for ConstructionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ConstructionProgressEvent>()
+        app.insert_resource(BuildingGrid::new())
+            .add_event::<ConstructionProgressEvent>()
             .add_event::<ConstructionCompletedEvent>()
             .add_event::<SpawnBuildingEvent>()
             .add_systems(
@@ -26,12 +28,13 @@ pub struct SpawnBuildingEvent {
     pub player_id: u8,
 }
 
-/// Spawns building entities in response to `SpawnBuildingEvent`.
+/// Spawns building entities and marks their exclusion zone in `BuildingGrid`.
 /// Shared infrastructure — handles requests from both AI and player systems.
 pub fn building_spawn_handler(
     mut events: EventReader<SpawnBuildingEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut building_grid: ResMut<BuildingGrid>,
 ) {
     for ev in events.read() {
         EntityFactory::spawn_building(
@@ -41,6 +44,7 @@ pub fn building_spawn_handler(
             ev.position,
             ev.player_id,
         );
+        building_grid.mark_circle(ev.position, ev.building_type.exclusion_radius());
     }
 }
 
