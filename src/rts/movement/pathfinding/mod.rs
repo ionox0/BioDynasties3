@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use std::sync::Arc;
 use tracing::instrument;
 
-use crate::world::static_terrain::StaticTerrainHeights;
+use crate::world::static_terrain::{MapSeed, StaticTerrainHeights};
 
 pub struct PathfindingPlugin;
 
@@ -28,6 +28,7 @@ impl Plugin for PathfindingPlugin {
 fn setup_pathfinding_grid(
     mut commands: Commands,
     terrain: Option<Res<StaticTerrainHeights>>,
+    map_seed: Option<Res<MapSeed>>,
     existing_grid: Option<Res<grid::TerrainPathfindingGrid>>,
     mut initialized: Local<bool>,
 ) {
@@ -35,12 +36,12 @@ fn setup_pathfinding_grid(
         return;
     }
     let Some(terrain) = terrain else { return };
+    let Some(map_seed) = map_seed else { return };
 
     let world_size = crate::core::constants::movement::MAP_BOUNDARY * 2.0;
     let grid = grid::TerrainPathfindingGrid::from_terrain(&terrain, world_size);
     let grid_arc = Arc::new(grid.clone());
-    // StaticTerrainHeights is deterministic (seed 42) — fresh instance avoids needing Clone.
-    let terrain_arc = Arc::new(StaticTerrainHeights::default());
+    let terrain_arc = Arc::new(StaticTerrainHeights::from_seed(map_seed.0));
     commands.insert_resource(grid);
     commands.insert_resource(grid::PathfindingGridResource { grid: grid_arc, terrain: terrain_arc });
     *initialized = true;

@@ -8,9 +8,10 @@ use crate::world::static_terrain::StaticTerrainHeights;
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 
 /// Radius from the AI Queen at which new buildings are placed.
-pub const BUILDING_PLACEMENT_RADIUS: f32 = 80.0;
+pub const BUILDING_PLACEMENT_RADIUS: f32 = 160.0;
 
-const BUILDING_PRIORITY: f32 = 50.0;
+const NURSERY_PRIORITY: f32 = 30.0;
+const WARRIOR_CHAMBER_PRIORITY: f32 = 45.0;
 
 #[derive(SystemParam)]
 pub(crate) struct BuildingParams<'w, 's> {
@@ -18,33 +19,43 @@ pub(crate) struct BuildingParams<'w, 's> {
     terrain: Res<'w, StaticTerrainHeights>,
 }
 
-/// Pushes a `BuildBuilding` goal if the AI has no Nursery yet.
+/// Pushes `BuildBuilding` goals for Nursery and WarriorChamber on each eval tick.
+/// No existence check — priorities and nectar cost act as the natural rate limiter.
+/// Placement is offset from a randomly chosen existing AI building so the base
+/// can expand outward rather than always clustering around the Queen.
 pub fn generate_building_goals(goals: &mut GlobalGoalManager, params: &BuildingParams) {
-    let has_nursery = params
+    let ai_buildings: Vec<Vec3> = params
         .buildings
         .iter()
-        .any(|(_, b, _)| b.player_id == 2 && b.building_type == BuildingType::Nursery);
-    if has_nursery {
+        .filter(|(_, b, _)| b.player_id == 2)
+        .map(|(_, _, tf)| tf.translation)
+        .collect();
+
+    if ai_buildings.is_empty() {
         return;
     }
 
-    let Some((_, _, queen_tf)) = params
-        .buildings
-        .iter()
-        .find(|(_, b, _)| b.player_id == 2 && b.building_type == BuildingType::Queen)
-    else {
-        return;
-    };
-
-    let position = placement_position(queen_tf.translation, BUILDING_PLACEMENT_RADIUS, &params.terrain);
     goals.push(
-        BUILDING_PRIORITY,
+        NURSERY_PRIORITY,
         UnifiedGoal::BuildBuilding {
             building_type: BuildingType::Nursery,
-            position,
+            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain),
             player_id: 2,
         },
     );
+    goals.push(
+        WARRIOR_CHAMBER_PRIORITY,
+        UnifiedGoal::BuildBuilding {
+            building_type: BuildingType::WarriorChamber,
+            position: placement_near_random(&ai_buildings, BUILDING_PLACEMENT_RADIUS, &params.terrain),
+            player_id: 2,
+        },
+    );
+}
+
+fn placement_near_random(buildings: &[Vec3], radius: f32, terrain: &StaticTerrainHeights) -> Vec3 {
+    let idx = rand::thread_rng().gen_range(0..buildings.len());
+    placement_position(buildings[idx], radius, terrain)
 }
 
 fn placement_position(origin: Vec3, radius: f32, terrain: &StaticTerrainHeights) -> Vec3 {
