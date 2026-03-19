@@ -86,24 +86,7 @@ fn do_spawn_ai_base(commands: &mut Commands, asset_server: &AssetServer, stockpi
 
     let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
     let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
-    commands.spawn((
-        SceneRoot(asset_server.load("models/insects/good/fourmi.glb#Scene0")),
-        Transform::from_translation(worker_pos).with_scale(Vec3::splat(3.75)),
-        RTSUnit { player_id: cfg.player_id, unit_type: Some(UnitType::Fourmi) },
-        Movement { max_speed: 80.0, current_velocity: Vec3::ZERO, target_position: None },
-        PathfindingState::default(),
-        Position { translation: worker_pos },
-        CollisionRadius { radius: 6.0 },
-        SpatialGridPosition::default(),
-        RTSHealth { current: 100.0, max: 100.0, ..RTSHealth::default() },
-        ResourceGatherer {
-            gather_rate: 5.0,
-            capacity: 10.0,
-            carried_amount: 0.0,
-            resource_type: None,
-            target_resource: None,
-        },
-    ));
+    EntityFactory::spawn_unit(commands, asset_server, UnitType::Fourmi, worker_pos, cfg.player_id);
 }
 
 /// Spawns AI player 2's base at the south-east corner.
