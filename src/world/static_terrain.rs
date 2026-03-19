@@ -5,6 +5,7 @@
 
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
+use rand::random;
 use super::triplanar_mapping::SimpleMaterial;
 use tracing::instrument;
 
@@ -20,12 +21,19 @@ pub const MICRO_SCALE: f32 = 40.0; // Very fine micro-variations for maximum gra
 pub const ROCKY_TERRAIN_HEIGHT_THRESHOLD: f32 = 36.0;      // Above this = rocky_terrain (IMPASSABLE)
 
 
+/// Stores the seed used for this session's terrain so other systems can reproduce it.
+#[derive(Resource)]
+pub struct MapSeed(pub u32);
+
 pub struct StaticTerrainPlugin;
 
 impl Plugin for StaticTerrainPlugin {
     #[instrument(skip_all)]
     fn build(&self, app: &mut App) {
-        app.insert_resource(StaticTerrainHeights::default())
+        let seed: u32 = random();
+        info!("Map seed: {seed}");
+        app.insert_resource(MapSeed(seed))
+            .insert_resource(StaticTerrainHeights::from_seed(seed))
             .insert_resource(DebugCounters::default())
             .add_systems(Update, (debug_system_update, check_textures_and_generate_terrain, debug_terrain_entities, immediate_entity_verification));
     }
@@ -45,11 +53,9 @@ pub struct StaticTerrainHeights {
     noise: Perlin,
 }
 
-impl Default for StaticTerrainHeights {
-    fn default() -> Self {
-        Self {
-            noise: Perlin::new(42),
-        }
+impl StaticTerrainHeights {
+    pub fn from_seed(seed: u32) -> Self {
+        Self { noise: Perlin::new(seed) }
     }
 }
 
