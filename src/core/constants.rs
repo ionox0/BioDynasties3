@@ -3,7 +3,7 @@
                      // This module contains all the magic numbers and configuration values used throughout the game
 
 // === WINDOW AND DISPLAY ===
-pub const WINDOW_TITLE: &str = "Flexible Rust Game";
+pub const WINDOW_TITLE: &str = "BioDynasties3";
 pub const WINDOW_WIDTH: f32 = 1280.0;
 pub const WINDOW_HEIGHT: f32 = 720.0;
 

@@ -201,7 +201,9 @@ pub fn update_animations(
                         }
                     }
 
-                    if let Some(index) = node_index {
+                    if event.new_state == AnimationState::Idle {
+                        player.pause_all();
+                    } else if let Some(index) = node_index {
                         play_with_speed(&mut player, index, rts_unit.unit_type.as_ref());
                     } else {
                         debug!(

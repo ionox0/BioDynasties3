@@ -27,7 +27,7 @@ impl Plugin for UIPlugin {
             .init_resource::<HoveredResource>()
             .init_resource::<icons::UIIcons>()
             .add_plugins((
-                HealthUIPlugin,
+                // HealthUIPlugin,
                 ResourceDisplayPlugin,
                 ActionPanelPlugin,
                 PlacementPlugin,

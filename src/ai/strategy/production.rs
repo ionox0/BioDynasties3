@@ -44,7 +44,7 @@ fn push_unit_goals(
     let mut budget = available_nectar;
 
     // Military executes first (higher priority), so deduct it from budget first.
-    let mut roster = early_military_roster();
+    let mut roster = military_roster_for_player(player_id);
     roster.shuffle(&mut rand::thread_rng());
     for unit_type in roster {
         let cost = unit_type.build_cost_nectar();
@@ -80,13 +80,9 @@ fn find_building(
         .map(|(e, _)| e)
 }
 
-fn early_military_roster() -> Vec<UnitType> {
-    vec![
-        UnitType::Scorpion,
-        UnitType::RolyPoly,
-        UnitType::GoliathBirdeater,
-        UnitType::RhinoBeetle,
-        UnitType::CairnsBirdwing,
-        UnitType::Dragonfly,
-    ]
+fn military_roster_for_player(player_id: u8) -> Vec<UnitType> {
+    match player_id {
+        2 => vec![UnitType::CairnsBirdwing, UnitType::Dragonfly],
+        _ => vec![UnitType::Scorpion, UnitType::RhinoBeetle, UnitType::GoliathBirdeater, UnitType::RolyPoly],
+    }
 }
