@@ -54,8 +54,15 @@ fn placement_near_random(buildings: &[Vec3], radius: f32, terrain: &StaticTerrai
 }
 
 fn placement_position(origin: Vec3, radius: f32, terrain: &StaticTerrainHeights, building_grid: &BuildingGrid) -> Vec3 {
+    use crate::core::constants::movement::TERRAIN_SIZE;
+    const MARGIN: f32 = 100.0;
+    let limit = TERRAIN_SIZE - MARGIN;
     let angle = rand::thread_rng().gen_range(0.0..std::f32::consts::TAU);
-    let candidate = Vec3::new(origin.x + angle.cos() * radius, 0.0, origin.z + angle.sin() * radius);
+    let candidate = Vec3::new(
+        (origin.x + angle.cos() * radius).clamp(-limit, limit),
+        0.0,
+        (origin.z + angle.sin() * radius).clamp(-limit, limit),
+    );
     if let Some(pos) = building_grid.find_clear_position(candidate, terrain) {
         return pos;
     }

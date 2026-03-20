@@ -19,7 +19,7 @@ use crate::rts::movement::events::MovementTargetEvent;
 use crate::world::building_grid::BuildingGrid;
 use crate::world::static_terrain::StaticTerrainHeights;
 
-const RALLY_RADIUS: f32 = 240.0;
+const RALLY_RADIUS: f32 = 480.0;
 
 #[derive(SystemParam)]
 struct SpawnAccess<'w> {
@@ -80,8 +80,10 @@ fn production_queue_system(
                 Vec3::new(p.x, spawn.terrain.get_height(p.x, p.y), p.y)
             });
         let spawned = EntityFactory::spawn_unit(&mut commands, &asset_server, unit_type, pos, building.player_id);
-        let angle = rand::thread_rng().gen_range(0.0..std::f32::consts::TAU);
-        let rally_xz = spawn.terrain.find_passable_near((tf.translation + Vec3::new(angle.cos() * RALLY_RADIUS, 0.0, angle.sin() * RALLY_RADIUS)).xz());
+        let mut rng = rand::thread_rng();
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let dist = rng.gen_range(0.0..RALLY_RADIUS);
+        let rally_xz = spawn.terrain.find_passable_near((tf.translation + Vec3::new(angle.cos() * dist, 0.0, angle.sin() * dist)).xz());
         let rally = Vec3::new(rally_xz.x, spawn.terrain.get_height(rally_xz.x, rally_xz.y), rally_xz.y);
         spawn.move_events.send(MovementTargetEvent { entity: spawned, target_position: rally });
     }

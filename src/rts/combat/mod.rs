@@ -138,6 +138,7 @@ impl Plugin for CombatPlugin {
                     target_management_system,
                     combat_execution_system,
                     damage_resolution_system,
+                    retaliate_on_attack,
                     health_regen_system,
                     death_system,
                 )
@@ -370,6 +371,18 @@ fn apply_armor(base: f32, armor: f32, damage_type: &DamageType) -> f32 {
     base * (1.0 - reduction)
 }
 
+
+/// When a military unit (no `ResourceGatherer`) takes damage, immediately retarget the attacker.
+fn retaliate_on_attack(
+    mut damage_events: EventReader<DamageEvent>,
+    military: Query<Entity, (With<Combat>, Without<ResourceGatherer>, Without<Dying>)>,
+    mut target_events: EventWriter<CombatTargetEvent>,
+) {
+    for ev in damage_events.read() {
+        if military.get(ev.target).is_err() { continue; }
+        target_events.send(CombatTargetEvent { attacker: ev.target, target: ev.attacker, move_to_range: true });
+    }
+}
 
 fn add_combat_state_to_fighters(
     mut commands: Commands,
