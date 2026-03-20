@@ -12,8 +12,8 @@ use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 /// Radius from the chosen anchor building at which new buildings are placed.
 pub const BUILDING_PLACEMENT_RADIUS: f32 = 280.0;
 
-const NURSERY_PRIORITY: f32 = 10.0;
-const WARRIOR_CHAMBER_PRIORITY: f32 = 15.0;
+const NURSERY_PRIORITY: f32 = 65.0;
+const WARRIOR_CHAMBER_PRIORITY: f32 = 70.0;
 
 #[derive(SystemParam)]
 pub(crate) struct BuildingParams<'w, 's> {

@@ -4,23 +4,26 @@ use std::collections::HashMap;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
-use crate::core::components::{Combat, RTSUnit, UnitState};
+use crate::core::components::{Building, Combat, Dying, RTSUnit, UnitState};
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
 use crate::rts::combat::TargetGrid;
 
 /// Fraction of idle AI units committed to each attack wave.
 const WAVE_COMMIT_FRACTION: f32 = 0.75;
 const ATTACK_PRIORITY: f32 = 70.0;
+const MIN_UNITS_TO_ATTACK: usize = 100;
 
 #[derive(SystemParam)]
 pub(crate) struct CombatParams<'w, 's> {
     #[allow(clippy::type_complexity)]
     pub(crate) idle_ai: Query<'w, 's, (Entity, &'static RTSUnit, &'static UnitState, &'static Combat, &'static Transform)>,
+    #[allow(clippy::type_complexity)]
+    pub(crate) all_units: Query<'w, 's, &'static RTSUnit, (Without<Building>, Without<Dying>)>,
     pub(crate) target_grid: Res<'w, TargetGrid>,
 }
 
 /// Orders idle AI units to attack an enemy player's units.
-pub fn generate_combat_goals(goals: &mut GlobalGoalManager, params: &CombatParams) {
+pub fn generate_combat_goals(goals: &mut GlobalGoalManager, params: &CombatParams, combat_unlocked: &mut std::collections::HashSet<u8>) {
     let mut by_player: HashMap<u8, Vec<(Entity, Vec3)>> = HashMap::new();
     for (entity, unit, state, combat, transform) in params.idle_ai.iter() {
         if unit.player_id >= 2
@@ -33,6 +36,13 @@ pub fn generate_combat_goals(goals: &mut GlobalGoalManager, params: &CombatParam
     }
 
     for (player_id, mut candidates) in by_player {
+        if !combat_unlocked.contains(&player_id) {
+            let unit_count = params.all_units.iter().filter(|u| u.player_id == player_id).count();
+            if unit_count <= MIN_UNITS_TO_ATTACK {
+                continue;
+            }
+            combat_unlocked.insert(player_id);
+        }
         candidates.shuffle(&mut rand::thread_rng());
         let commit_count = ((candidates.len() as f32) * WAVE_COMMIT_FRACTION).ceil() as usize;
         for (attacker, pos) in candidates.into_iter().take(commit_count) {

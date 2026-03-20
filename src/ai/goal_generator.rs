@@ -15,34 +15,33 @@ use crate::ai::strategy::{
     WorkerParams, generate_worker_goals,
 };
 
-const WORKER_EVAL_MIN: f32 = 3.0;
-const WORKER_EVAL_MAX: f32 = 8.0;
-const PRODUCTION_EVAL_MIN: f32 = 5.0;
-const PRODUCTION_EVAL_MAX: f32 = 10.0;
-const COMBAT_EVAL_MIN: f32 = 20.0;
-const COMBAT_EVAL_MAX: f32 = 45.0;
+const WORKER_EVAL_MIN: f32 = 15.0;
+const WORKER_EVAL_MAX: f32 = 40.0;
+const PRODUCTION_EVAL_MIN: f32 = 25.0;
+const PRODUCTION_EVAL_MAX: f32 = 50.0;
+const COMBAT_EVAL_MIN: f32 = 100.0;
+const COMBAT_EVAL_MAX: f32 = 225.0;
 /// Combat waves don't begin until this many seconds into the game.
-const COMBAT_INITIAL_DELAY: f32 = 30.0;
-const BUILDING_EVAL_MIN: f32 = 10.0;
-const BUILDING_EVAL_MAX: f32 = 20.0;
+const COMBAT_INITIAL_DELAY: f32 = 150.0;
+const BUILDING_EVAL_MIN: f32 = 50.0;
+const BUILDING_EVAL_MAX: f32 = 100.0;
 
 pub(crate) struct GoalGeneratorState {
     next_worker_eval: f32,
     next_production_eval: f32,
     next_combat_eval: f32,
     next_building_eval: f32,
+    combat_unlocked: std::collections::HashSet<u8>,
 }
 
 impl Default for GoalGeneratorState {
     fn default() -> Self {
         Self {
-            // Workers and production activate on the first tick.
             next_worker_eval: 0.0,
             next_production_eval: 0.0,
-            // Combat waits for the initial delay.
             next_combat_eval: COMBAT_INITIAL_DELAY,
-            // Building check activates on the first tick; suppressed if building already exists.
             next_building_eval: 0.0,
+            combat_unlocked: std::collections::HashSet::new(),
         }
     }
 }
@@ -76,7 +75,7 @@ pub(crate) fn goal_generator(
     }
 
     if now >= state.next_combat_eval {
-        generate_combat_goals(&mut goals, &queries.combat);
+        generate_combat_goals(&mut goals, &queries.combat, &mut state.combat_unlocked);
         state.next_combat_eval = now + rng.gen_range(COMBAT_EVAL_MIN..COMBAT_EVAL_MAX);
     }
 

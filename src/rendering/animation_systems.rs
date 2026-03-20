@@ -150,7 +150,7 @@ fn play_with_speed(player: &mut AnimationPlayer, index: AnimationNodeIndex, unit
 fn get_animation_name(unit_type: &crate::core::components::UnitType, animation_state: &AnimationState) -> String {
     use crate::core::components::UnitType;
     match (unit_type, animation_state) {
-        (UnitType::Bee, AnimationState::Special) => "bee_hover".to_string(),
+        (UnitType::Bee, AnimationState::Special) => "Animation2".to_string(),
         _ => "Animation0".to_string(),
     }
 }
@@ -162,7 +162,7 @@ fn get_animations_for_unit(unit_type: &Option<crate::core::components::UnitType>
     if let Some(unit_type) = unit_type {
         match unit_type {
             UnitType::Bee => vec![
-                "bee_hover".to_string(),
+                "Animation2".to_string(),
                 "Animation0".to_string(),
             ],
             _ => vec!["Animation0".to_string()],

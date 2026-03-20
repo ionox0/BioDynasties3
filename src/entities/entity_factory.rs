@@ -123,7 +123,7 @@ fn add_gatherer_if_needed(entity: &mut EntityCommands, unit_type: &UnitType) {
         }),
         UnitType::Bee => Some(ResourceGatherer {
             gather_rate: 15.0,
-            capacity: 3.0,
+            capacity: 5.0,
             carried_amount: 0.0,
             resource_type: None,
             target_resource: None,
@@ -205,7 +205,7 @@ fn unit_model_rotation(unit_type: &UnitType) -> Quat {
 fn unit_model_scale(unit_type: &UnitType) -> f32 {
     match unit_type {
         UnitType::Fourmi => 3.75,
-        UnitType::Bee => 0.75,
+        UnitType::Bee => 1.3,
         UnitType::CairnsBirdwing => 18.75,
         UnitType::Dragonfly => 100.0,
         UnitType::RolyPoly => 0.3,

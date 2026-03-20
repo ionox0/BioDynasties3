@@ -2,6 +2,7 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use rand::seq::SliceRandom;
 use crate::core::components::{Building, BuildingType, ProductionQueue, UnitType};
 use crate::core::resources::Stockpiles;
 use crate::ai::goals::types::{GlobalGoalManager, UnifiedGoal};
@@ -40,31 +41,31 @@ fn push_unit_goals(
     available_nectar: f32,
     worker_type: UnitType,
 ) {
-    if available_nectar >= worker_type.build_cost_nectar() {
-        if let Some(entity) = find_building(buildings, player_id, worker_type.required_building()) {
-            for _ in 0..WORKERS_PER_EVAL {
-                goals.push(WORKER_PRIORITY, UnifiedGoal::BuildUnit {
-                    building: entity,
-                    unit_type: worker_type.clone(),
-                    player_id,
-                });
-            }
-        }
+    let mut budget = available_nectar;
+
+    // Military executes first (higher priority), so deduct it from budget first.
+    let mut roster = early_military_roster();
+    roster.shuffle(&mut rand::thread_rng());
+    for unit_type in roster {
+        let cost = unit_type.build_cost_nectar();
+        if budget < cost { continue; }
+        let Some(entity) = find_building(buildings, player_id, unit_type.required_building()) else { continue };
+        goals.push(MILITARY_PRIORITY, UnifiedGoal::BuildUnit { building: entity, unit_type, player_id });
+        budget -= cost;
+        break;
     }
 
-    for unit_type in early_military_roster() {
-        let Some(entity) = find_building(buildings, player_id, unit_type.required_building()) else {
-            continue;
-        };
-        if available_nectar < unit_type.build_cost_nectar() {
-            continue;
+    // Workers get whatever budget remains.
+    let worker_cost = worker_type.build_cost_nectar();
+    if let Some(entity) = find_building(buildings, player_id, worker_type.required_building()) {
+        let affordable = ((budget / worker_cost) as u32).min(WORKERS_PER_EVAL);
+        for _ in 0..affordable {
+            goals.push(WORKER_PRIORITY, UnifiedGoal::BuildUnit {
+                building: entity,
+                unit_type: worker_type.clone(),
+                player_id,
+            });
         }
-        goals.push(MILITARY_PRIORITY, UnifiedGoal::BuildUnit {
-            building: entity,
-            unit_type,
-            player_id,
-        });
-        break;
     }
 }
 
