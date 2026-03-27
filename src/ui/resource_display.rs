@@ -266,7 +266,7 @@ fn update_unit_count_display(
         return;
     }
     for (label, mut text) in label_q.iter_mut() {
-        let count = units.iter().filter(|u| u.player_id == label.player_id).count();
+        let count = units.iter().filter(|u| u.player_id == label.player_id && u.unit_type.is_some()).count();
         **text = if label.player_id == 1 {
             format!("Units: {count}")
         } else {

@@ -85,9 +85,16 @@ fn do_spawn_ai_base(commands: &mut Commands, asset_server: &AssetServer, stockpi
 
     EntityFactory::spawn_building(commands, asset_server, BuildingType::Queen, base_pos, cfg.player_id);
 
-    let wp = base_pos + Vec3::new(-30.0, 0.0, 0.0);
-    let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
-    EntityFactory::spawn_unit(commands, asset_server, cfg.worker_type, worker_pos, cfg.player_id);
+    let worker_offsets = [
+        Vec3::new(-30.0, 0.0, 0.0),
+        Vec3::new(-30.0, 0.0, 40.0),
+        Vec3::new(-70.0, 0.0, 0.0),
+    ];
+    for offset in worker_offsets {
+        let wp = base_pos + offset;
+        let worker_pos = Vec3::new(wp.x, terrain.get_height(wp.x, wp.z) + 1.0, wp.z);
+        EntityFactory::spawn_unit(commands, asset_server, cfg.worker_type, worker_pos, cfg.player_id);
+    }
 }
 
 /// Spawns AI player 2's base at the south-east corner.
