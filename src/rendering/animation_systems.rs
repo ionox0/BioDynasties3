@@ -21,10 +21,6 @@ pub(crate) struct PendingGlbModels<'w, 's> {
     query: Query<'w, 's, (Entity, &'static SceneRoot, &'static mut UnitAnimationController, &'static RTSUnit), Without<AnimationPlayerSearched>>,
 }
 
-#[derive(SystemParam)]
-pub(crate) struct RecentlyChangedControllers<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut UnitAnimationController), Changed<UnitAnimationController>>,
-}
 
 pub struct AnimationPlugin;
 
@@ -38,7 +34,6 @@ impl Plugin for AnimationPlugin {
                 animation_state_manager,
                 update_animations,
                 find_animation_players,
-                start_idle_animations,
             )
                 .chain(),
         )
@@ -143,7 +138,7 @@ fn is_flying_unit(unit_type: &UnitType) -> bool {
 
 fn play_with_speed(player: &mut AnimationPlayer, index: AnimationNodeIndex, unit_type: Option<&UnitType>) {
     let speed = unit_type.map_or(1.0, |ut| get_unit_stats(ut).animation_speed);
-    player.play(index).repeat().set_speed(speed);
+    player.play(index).repeat().set_speed(speed).resume();
 }
 
 /// Get the specific animation name for a unit type and animation state
@@ -326,24 +321,6 @@ fn search_simple_for_player(
     None
 }
 
-// System to start idle animations for units that just got their animation player assigned
-pub fn start_idle_animations(
-    mut changed_controllers: RecentlyChangedControllers,
-    mut animation_players: Query<&mut AnimationPlayer>,
-    units: Query<&RTSUnit>,
-) {
-    for (entity, controller) in changed_controllers.query.iter_mut() {
-        if let Some(player_entity) = controller.animation_player {
-            if let Ok(mut player) = animation_players.get_mut(player_entity) {
-                let node_index = controller
-                    .animation_node_index
-                    .unwrap_or(AnimationNodeIndex::new(0));
-                let unit_type = units.get(entity).ok().and_then(|u| u.unit_type.as_ref());
-                play_with_speed(&mut player, node_index, unit_type);
-            }
-        }
-    }
-}
 
 // System to retroactively add animation controllers to units that don't have them
 pub fn add_missing_animation_controllers(
