@@ -1,6 +1,6 @@
 # Bio Dynasties
 
-![Gameplay](mov.gif)
+![Gameplay](gameplay.gif)
 
 A real-time strategy game built with [Bevy](https://bevyengine.org/) (Rust).
 
