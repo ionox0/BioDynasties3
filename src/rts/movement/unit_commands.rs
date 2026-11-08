@@ -101,7 +101,7 @@ fn right_click_command(
     if entities.len() > 1 {
         targets.formation_events.send(FormationMoveEvent { units: entities, target: destination });
     } else if let Some(entity) = entities.into_iter().next() {
-        targets.move_events.send(MovementTargetEvent { entity, target_position: destination });
+        targets.move_events.send(MovementTargetEvent::new(entity, destination));
     }
 }
 

@@ -111,7 +111,7 @@ pub(super) fn gathering_system(
                 if tick_delivery(entity, &gatherer, unit, transform, &mut ctx) {
                     if let Some(res) = gatherer.target_resource {
                         if let Ok((_, res_tf)) = resources.get(res) {
-                            ctx.move_events.send(MovementTargetEvent { entity, target_position: res_tf.translation });
+                            ctx.move_events.send(MovementTargetEvent::new(entity, res_tf.translation));
                         }
                     }
                 }
@@ -142,7 +142,7 @@ fn tick_gathering(
     let dist = (transform.translation.xz() - resource_tf.translation.xz()).length();
     if dist > GATHERING_DISTANCE {
         // Not at resource yet — send move command (handles post-delivery return too).
-        ctx.move_events.send(MovementTargetEvent { entity, target_position: resource_tf.translation });
+        ctx.move_events.send(MovementTargetEvent::new(entity, resource_tf.translation));
         return;
     }
     if gatherer.carried_amount >= gatherer.capacity { return; }
@@ -181,7 +181,7 @@ fn tick_delivery(
         let already_moving = ctx.movements.get(entity)
             .is_ok_and(|m| m.target_position.is_some());
         if !already_moving {
-            ctx.move_events.send(MovementTargetEvent { entity, target_position: building_pos });
+            ctx.move_events.send(MovementTargetEvent::new(entity, building_pos));
         }
         return false;
     }

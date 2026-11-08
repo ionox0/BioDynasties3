@@ -270,14 +270,12 @@ fn build_tooltip_content(
     }
 
     if let Ok(pf) = unit_data.pathfinding_query.get(entity) {
-        let total = pf.path.len();
-        let reached = pf.path.len().saturating_sub(pf.path_index);
-        let failure = if pf.last_pathfinding_failure.is_finite() {
-            format!("fail@{:.1}s", pf.last_pathfinding_failure)
-        } else {
-            "ok".to_string()
+        let route = match pf.route {
+            Route::Direct => "direct",
+            Route::Pending => "waiting for flow field",
+            Route::Field(_) => "flow field",
         };
-        text.push_str(&format!("\nPath: {reached} / {total} waypoints ({failure})"));
+        text.push_str(&format!("\nRoute: {route}"));
     }
 
     Some((text, unit.player_id))

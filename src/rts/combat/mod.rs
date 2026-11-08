@@ -174,10 +174,7 @@ fn combat_target_handler(
         commands.entity(ev.attacker).insert(UnitState::MovingToAttack);
         if ev.move_to_range {
             if let Ok(target_tf) = transform_q.get(ev.target) {
-                move_events.send(MovementTargetEvent {
-                    entity: ev.attacker,
-                    target_position: target_tf.translation,
-                });
+                move_events.send(MovementTargetEvent::new(ev.attacker, target_tf.translation));
             }
         }
     }
@@ -271,7 +268,7 @@ fn combat_execution_system(
             let dest = ttf.translation - dir * (combat.attack_range * cc::TARGET_POSITION_RATIO);
             let needs_move = movement.map_or(true, |m| m.target_position.is_none());
             if needs_move {
-                move_events.send(MovementTargetEvent { entity: attacker, target_position: dest });
+                move_events.send(MovementTargetEvent::new(attacker, dest));
             }
             combat.is_attacking = false;
         } else {

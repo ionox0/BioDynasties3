@@ -176,7 +176,7 @@ fn building_stats(building_type: &BuildingType) -> BuildingConfig {
 
 fn unit_model_path(unit_type: &UnitType) -> &'static str {
     match unit_type {
-        UnitType::Fourmi => "models/insects/good/fourmi.glb#Scene0",
+        UnitType::Fourmi => "models/insects/good/bull_ant.glb#Scene0",
         UnitType::Bee => "models/insects/good/bee.glb#Scene0",
         UnitType::CairnsBirdwing => "models/insects/good/cairns_birdwing.glb#Scene0",
         UnitType::Dragonfly => "models/insects/good/dragonfly.glb#Scene0",
@@ -184,6 +184,8 @@ fn unit_model_path(unit_type: &UnitType) -> &'static str {
         UnitType::Scorpion => "models/insects/good/scorpion.glb#Scene0",
         UnitType::GoliathBirdeater => "models/insects/good/goliath_birdeater.glb#Scene0",
         UnitType::RhinoBeetle => "models/insects/good/rhino_beetle.glb#Scene0",
+        UnitType::EmperorScorpion => "models/insects/good/emperor_scorpion.glb#Scene0",
+        UnitType::MajestyBeetle => "models/insects/good/majesty_beetle.glb#Scene0",
     }
 }
 
@@ -204,7 +206,7 @@ fn unit_model_rotation(unit_type: &UnitType) -> Quat {
 
 fn unit_model_scale(unit_type: &UnitType) -> f32 {
     match unit_type {
-        UnitType::Fourmi => 3.75,
+        UnitType::Fourmi => 6.0,
         UnitType::Bee => 2.6,
         UnitType::CairnsBirdwing => 18.75,
         UnitType::Dragonfly => 100.0,
@@ -212,5 +214,7 @@ fn unit_model_scale(unit_type: &UnitType) -> f32 {
         UnitType::Scorpion => 10.0,
         UnitType::GoliathBirdeater => 1.5,
         UnitType::RhinoBeetle => 5.0,
+        UnitType::EmperorScorpion => 15.0,
+        UnitType::MajestyBeetle => 12.0,
     }
 }

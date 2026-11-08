@@ -22,9 +22,6 @@ pub const MICRO_SCALE: f32 = 40.0; // Very fine micro-variations for maximum gra
 pub const ROCKY_TERRAIN_HEIGHT_THRESHOLD: f32 = 36.0;      // Above this = rocky_terrain (IMPASSABLE)
 
 
-/// Stores the seed used for this session's terrain so other systems can reproduce it.
-#[derive(Resource)]
-pub struct MapSeed(pub u32);
 
 const NORMAL_GRID_RESOLUTION: usize = 256;
 
@@ -69,8 +66,7 @@ impl Plugin for StaticTerrainPlugin {
         info!("Map seed: {seed}");
         let terrain = StaticTerrainHeights::from_seed(seed);
         let normals = TerrainNormals::build(&terrain);
-        app.insert_resource(MapSeed(seed))
-            .insert_resource(terrain)
+        app.insert_resource(terrain)
             .insert_resource(normals)
             .insert_resource(DebugCounters::default())
             .add_systems(Update, (debug_system_update, check_textures_and_generate_terrain, debug_terrain_entities, immediate_entity_verification));
@@ -85,22 +81,51 @@ pub struct DebugCounters {
     verify_counter: u32,
 }
 
-/// Simple terrain height provider for static terrain
+/// Vertices per side of the terrain mesh and the baked height grid (they share one lattice).
+pub const HEIGHT_GRID_RESOLUTION: usize = 256;
+
+/// Terrain heights baked once from noise at the mesh vertices.
+/// Lookups interpolate the same triangles the mesh renders, so units sit exactly on the visible surface.
 #[derive(Resource, Debug)]
 pub struct StaticTerrainHeights {
-    noise: Perlin,
+    heights: Vec<f32>,
 }
 
 impl StaticTerrainHeights {
     pub fn from_seed(seed: u32) -> Self {
-        Self { noise: Perlin::new(seed) }
+        let noise = Perlin::new(seed);
+        let res = HEIGHT_GRID_RESOLUTION;
+        let step = height_grid_step();
+        let heights = (0..res * res)
+            .map(|i| {
+                let (x, z) = ((i % res) as f32 * step - TERRAIN_SIZE, (i / res) as f32 * step - TERRAIN_SIZE);
+                sample_terrain_height(&noise, x, z)
+            })
+            .collect();
+        Self { heights }
     }
-}
 
-impl StaticTerrainHeights {
-    /// Get terrain height at any world position
+    fn vertex(&self, x: usize, z: usize) -> f32 {
+        self.heights[z * HEIGHT_GRID_RESOLUTION + x]
+    }
+
+    /// Terrain height at any world position, interpolated across the mesh triangle containing it.
     pub fn get_height(&self, x: f32, z: f32) -> f32 {
-        sample_terrain_height(&self.noise, x, z)
+        let last = (HEIGHT_GRID_RESOLUTION - 1) as f32;
+        let gx = ((x + TERRAIN_SIZE) / height_grid_step()).clamp(0.0, last - 1e-3);
+        let gz = ((z + TERRAIN_SIZE) / height_grid_step()).clamp(0.0, last - 1e-3);
+        let (ix, iz) = (gx as usize, gz as usize);
+        let (fx, fz) = (gx.fract(), gz.fract());
+        // Mesh splits each quad along the bottom-right → top-left diagonal.
+        let bottom_left = self.vertex(ix, iz);
+        let bottom_right = self.vertex(ix + 1, iz);
+        let top_left = self.vertex(ix, iz + 1);
+        let top_right = self.vertex(ix + 1, iz + 1);
+        if fx + fz <= 1.0 {
+            bottom_left + (bottom_right - bottom_left) * fx + (top_left - bottom_left) * fz
+        } else {
+            top_right + (top_left - top_right) * (1.0 - fx) + (bottom_right - top_right) * (1.0 - fz)
+        }
     }
     
     /// Check if a position is passable for unit movement
@@ -239,8 +264,7 @@ fn generate_heightfield_mesh(terrain_size: f32, terrain_heights: &StaticTerrainH
     use bevy::render::mesh::PrimitiveTopology;
     use bevy::render::render_asset::RenderAssetUsages;
     
-    // Mesh resolution - balance between quality and performance
-    let resolution = 256; // 256x256 vertices = 65,536 vertices (good balance)
+    let resolution = HEIGHT_GRID_RESOLUTION;
     let step = terrain_size / (resolution - 1) as f32;
     let half_size = terrain_size * 0.5;
     
@@ -353,8 +377,12 @@ fn calculate_terrain_normal(x: f32, z: f32, step: f32, terrain_heights: &StaticT
 
 
 
+fn height_grid_step() -> f32 {
+    TERRAIN_SIZE * 2.0 / (HEIGHT_GRID_RESOLUTION - 1) as f32
+}
+
 /// Sample terrain height at world coordinates with enhanced features
-pub fn sample_terrain_height(noise: &Perlin, x: f32, z: f32) -> f32 {
+fn sample_terrain_height(noise: &Perlin, x: f32, z: f32) -> f32 {
     // Primary landscape features (mountains, hills, valleys)
     let nx_primary = (x / NOISE_SCALE) as f64;
     let nz_primary = (z / NOISE_SCALE) as f64;

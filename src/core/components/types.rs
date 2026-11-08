@@ -17,6 +17,8 @@ pub enum UnitType {
     Scorpion,        // Heavy melee DPS
     GoliathBirdeater, // Heavy predator spider
     RhinoBeetle,     // Armored tank beetle
+    EmperorScorpion, // Heavy melee DPS (Meshy model)
+    MajestyBeetle,   // Armored tank beetle (Meshy model)
 }
 
 impl BuildingType {
@@ -59,6 +61,8 @@ impl UnitType {
             UnitType::Scorpion => "Scorpion",
             UnitType::GoliathBirdeater => "Goliath Birdeater",
             UnitType::RhinoBeetle => "Rhino Beetle",
+            UnitType::EmperorScorpion => "Emperor Scorpion",
+            UnitType::MajestyBeetle => "Majesty Beetle",
         }
     }
 
@@ -71,7 +75,7 @@ impl UnitType {
         match self {
             UnitType::Fourmi | UnitType::Bee => BuildingType::Queen,
             UnitType::CairnsBirdwing | UnitType::Dragonfly => BuildingType::Nursery,
-            UnitType::RolyPoly | UnitType::Scorpion | UnitType::GoliathBirdeater | UnitType::RhinoBeetle => BuildingType::WarriorChamber,
+            UnitType::RolyPoly | UnitType::Scorpion | UnitType::GoliathBirdeater | UnitType::RhinoBeetle | UnitType::EmperorScorpion | UnitType::MajestyBeetle => BuildingType::WarriorChamber,
         }
     }
 

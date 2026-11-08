@@ -138,33 +138,64 @@ fn is_flying_unit(unit_type: &UnitType) -> bool {
 
 fn play_with_speed(player: &mut AnimationPlayer, index: AnimationNodeIndex, unit_type: Option<&UnitType>) {
     let speed = unit_type.map_or(1.0, |ut| get_unit_stats(ut).animation_speed);
+    if !player.is_playing_animation(index) {
+        player.stop_all();
+    }
     player.play(index).repeat().set_speed(speed).resume();
 }
 
-/// Get the specific animation name for a unit type and animation state
-fn get_animation_name(unit_type: &crate::core::components::UnitType, animation_state: &AnimationState) -> String {
-    use crate::core::components::UnitType;
-    match (unit_type, animation_state) {
-        (UnitType::Bee, AnimationState::Special) => "Animation2".to_string(),
-        _ => "Animation0".to_string(),
+/// glTF clip index for each animation role in a unit's model (`None` = model has no such clip).
+struct ClipSet {
+    walk: usize,
+    idle: Option<usize>,
+    attack: Option<usize>,
+    death: Option<usize>,
+}
+
+fn clip_set(unit_type: &UnitType) -> ClipSet {
+    let set = |walk, idle, attack, death| ClipSet { walk, idle, attack, death };
+    match unit_type {
+        // Meshy models with generated clips: 0 Walk, 1 Idle, 2 Attack, 3 Death.
+        UnitType::Fourmi | UnitType::EmperorScorpion | UnitType::MajestyBeetle => set(0, Some(1), Some(2), Some(3)),
+        UnitType::Bee => set(1, Some(0), None, None), // 0 idle, 1 hover
+        UnitType::Scorpion => set(4, Some(3), Some(0), Some(1)), // Area Attack, Death, Defend, Idle, Walk
+        UnitType::RhinoBeetle => set(3, Some(2), Some(0), Some(1)), // attack, death, idle, walk
+        // Single-clip flyers keep flapping while idle.
+        UnitType::Dragonfly | UnitType::CairnsBirdwing => set(0, Some(0), None, None),
+        UnitType::RolyPoly | UnitType::GoliathBirdeater => set(0, None, None, None),
     }
 }
 
-/// Get list of animations to try loading for a specific unit type
-fn get_animations_for_unit(unit_type: &Option<crate::core::components::UnitType>) -> Vec<String> {
-    use crate::core::components::UnitType;
+/// Clip to play for a unit type in an animation state.
+fn get_animation_name(unit_type: &UnitType, animation_state: &AnimationState) -> String {
+    let clips = clip_set(unit_type);
+    let index = match animation_state {
+        AnimationState::Idle => clips.idle.unwrap_or(clips.walk),
+        // Special = flying for flyers, gathering for ground units.
+        AnimationState::Special if !is_flying_unit(unit_type) => clips.idle.unwrap_or(clips.walk),
+        AnimationState::Attacking => clips.attack.unwrap_or(clips.walk),
+        AnimationState::Death => clips.death.unwrap_or(clips.walk),
+        AnimationState::Walking | AnimationState::Running | AnimationState::Special => clips.walk,
+    };
+    format!("Animation{index}")
+}
 
-    if let Some(unit_type) = unit_type {
-        match unit_type {
-            UnitType::Bee => vec![
-                "Animation2".to_string(),
-                "Animation0".to_string(),
-            ],
-            _ => vec!["Animation0".to_string()],
+/// Units whose model has a dedicated idle clip (others pause their walk clip when idle).
+fn has_idle_clip(unit_type: Option<&UnitType>) -> bool {
+    unit_type.is_some_and(|ut| clip_set(ut).idle.is_some())
+}
+
+/// Every clip a unit type uses, walk first (the first loaded clip is the default).
+fn get_animations_for_unit(unit_type: &Option<UnitType>) -> Vec<String> {
+    let Some(unit_type) = unit_type else { return vec!["Animation0".to_string()] };
+    let clips = clip_set(unit_type);
+    let mut indices = vec![clips.walk];
+    for index in [clips.idle, clips.attack, clips.death].into_iter().flatten() {
+        if !indices.contains(&index) {
+            indices.push(index);
         }
-    } else {
-        vec!["Animation0".to_string()]
     }
+    indices.into_iter().map(|i| format!("Animation{i}")).collect()
 }
 
 // System to handle animation updates
@@ -196,7 +227,7 @@ pub fn update_animations(
                         }
                     }
 
-                    if event.new_state == AnimationState::Idle {
+                    if event.new_state == AnimationState::Idle && !has_idle_clip(rts_unit.unit_type.as_ref()) {
                         player.pause_all();
                     } else if let Some(index) = node_index {
                         play_with_speed(&mut player, index, rts_unit.unit_type.as_ref());

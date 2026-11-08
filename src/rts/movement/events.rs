@@ -7,6 +7,15 @@ use bevy::prelude::*;
 pub struct MovementTargetEvent {
     pub entity: Entity,
     pub target_position: Vec3,
+    /// Destination shared by the whole move order; units with the same goal share one flow field.
+    pub group_goal: Vec3,
+}
+
+impl MovementTargetEvent {
+    /// A move order for a single unit (its own target is the group goal).
+    pub fn new(entity: Entity, target_position: Vec3) -> Self {
+        Self { entity, target_position, group_goal: target_position }
+    }
 }
 
 /// Fired to halt a unit in place (clear target_position and velocity).

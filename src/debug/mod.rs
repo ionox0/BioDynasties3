@@ -1,5 +1,14 @@
 use bevy::prelude::*;
 use bevy::diagnostic::DiagnosticsStore;
+use crate::core::components::UnitType;
+use crate::entities::entity_factory::EntityFactory;
+use crate::world::static_terrain::StaticTerrainHeights;
+
+/// Units added per press of the stress-test key.
+const STRESS_SPAWN_COUNT: usize = 500;
+const STRESS_SPAWN_SPACING: f32 = 12.0;
+/// Where stress-test units appear (east of the player base).
+const STRESS_SPAWN_ORIGIN: Vec2 = Vec2::new(-2200.0, 0.0);
 
 /// Debug plugin for memory and performance monitoring
 pub struct DebugPlugin;
@@ -15,6 +24,7 @@ impl Plugin for DebugPlugin {
             .add_systems(Update, (
                 debug_memory_system,
                 debug_performance_system,
+                stress_spawn_units,
             ));
     }
 }
@@ -70,4 +80,25 @@ fn debug_performance_system(
     }
 
     *last_perf_log = current_time;
+}
+
+/// F9: spawns a block of player units for movement stress testing.
+fn stress_spawn_units(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    terrain: Res<StaticTerrainHeights>,
+) {
+    if !keys.just_pressed(KeyCode::F9) {
+        return;
+    }
+    let origin = terrain.find_passable_near(STRESS_SPAWN_ORIGIN);
+    let columns = (STRESS_SPAWN_COUNT as f32).sqrt().ceil() as usize;
+    for i in 0..STRESS_SPAWN_COUNT {
+        let x = origin.x + (i % columns) as f32 * STRESS_SPAWN_SPACING;
+        let z = origin.y + (i / columns) as f32 * STRESS_SPAWN_SPACING;
+        let position = Vec3::new(x, terrain.get_height(x, z) + 1.0, z);
+        EntityFactory::spawn_unit(&mut commands, &asset_server, UnitType::RolyPoly, position, 1);
+    }
+    info!("Stress test: spawned {STRESS_SPAWN_COUNT} units");
 }

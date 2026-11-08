@@ -212,7 +212,7 @@ fn setup_scene(mut commands: Commands) {
         DirectionalLight {
             color: Color::srgb(1.0, 0.95, 0.8),
             illuminance: 32000.0,
-            shadows_enabled: true,
+            shadows_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, -0.3, 0.0)),

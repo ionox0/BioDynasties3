@@ -125,8 +125,8 @@ fn get_unit_role(unit_type: &UnitType) -> UnitRole {
         UnitType::Fourmi | UnitType::Bee => UnitRole::Economic,
         UnitType::CairnsBirdwing => UnitRole::Scout,
         UnitType::Dragonfly | UnitType::GoliathBirdeater => UnitRole::Elite,
-        UnitType::RolyPoly | UnitType::RhinoBeetle => UnitRole::Tank,
-        UnitType::Scorpion => UnitRole::Dps,
+        UnitType::RolyPoly | UnitType::RhinoBeetle | UnitType::MajestyBeetle => UnitRole::Tank,
+        UnitType::Scorpion | UnitType::EmperorScorpion => UnitRole::Dps,
     }
 }
 
