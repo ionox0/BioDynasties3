@@ -86,10 +86,7 @@ fn execute_assign_worker(
         target_resource: *resource_entity,
         resource_type: resource_type.clone(),
     });
-    writers.move_events.send(MovementTargetEvent {
-        entity: *worker,
-        target_position: *resource_pos,
-    });
+    writers.move_events.send(MovementTargetEvent::new(*worker, *resource_pos));
 }
 
 fn execute_build_unit(

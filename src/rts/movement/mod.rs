@@ -1,11 +1,11 @@
 //! Unit movement system.
 //!
-//! Owns: `Movement.target_position / current_velocity`, `PathfindingState.path_index`
+//! Owns: `Movement.target_position / current_velocity`, `PathfindingState.route`
 //! Inputs: `MovementTargetEvent`, `StopMovementEvent`
-//! Outputs: `UnitArrivedEvent` (fired when a unit exhausts its path)
+//! Outputs: `UnitArrivedEvent` (fired when a unit reaches its target)
 //!
 //! System order each Update frame:
-//!   stop_unit_movement → apply_movement_targets → request_paths → poll_path_tasks → move_units → sync_position_component
+//!   stop_unit_movement → apply_movement_targets → poll_flow_fields → move_units → sync_position_component
 
 pub mod events;
 pub mod formation;
@@ -13,15 +13,24 @@ pub mod formation_events;
 pub mod pathfinding;
 pub mod unit_commands;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy::utils::Parallel;
 use hashbrown::HashMap;
+use tracing::instrument;
 use crate::core::components::*;
 use crate::core::constants::movement as mc;
 use crate::core::GameSet;
 use crate::world::static_terrain::{StaticTerrainHeights, TerrainNormals};
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
-use self::pathfinding::{request_paths, poll_path_tasks};
-use self::pathfinding::systems::PathTask;
+use self::pathfinding::flow_field::has_clear_line;
+use self::pathfinding::grid::CELL_SIZE;
+use self::pathfinding::systems::{poll_flow_fields, NavGridResource, PendingFlowFields, RouteRequest};
+
+/// Units this close to their target steer straight at it instead of following the field.
+const DIRECT_STEER_RANGE: f32 = CELL_SIZE * 2.0;
+/// Longest straight line checked for a direct route (longer orders always use a flow field).
+const LINE_CHECK_RANGE: f32 = 1000.0;
 
 pub struct MovementPlugin;
 
@@ -30,13 +39,13 @@ impl Plugin for MovementPlugin {
         app.add_event::<MovementTargetEvent>()
             .add_event::<StopMovementEvent>()
             .add_event::<UnitArrivedEvent>()
+            .init_resource::<PendingFlowFields>()
             .add_systems(
                 Update,
                 (
                     stop_unit_movement,
                     apply_movement_targets,
-                    request_paths,
-                    poll_path_tasks,
+                    poll_flow_fields,
                     move_units,
                     sync_position_component,
                 )
@@ -50,20 +59,44 @@ impl Plugin for MovementPlugin {
 // Target management
 // ---------------------------------------------------------------------------
 
+/// Units receiving move orders.
+#[derive(SystemParam)]
+pub(crate) struct MoveOrderUnits<'w, 's> {
+    query: Query<'w, 's, (&'static Transform, &'static mut Movement, &'static mut PathfindingState)>,
+}
+
 /// Sole writer of `Movement.target_position` — applies `MovementTargetEvent`.
+/// Units with a clear straight line go directly; the rest of each order shares one flow field.
+#[instrument(skip_all)]
 fn apply_movement_targets(
-    mut commands: Commands,
-    mut units: Query<(&mut Movement, &mut PathfindingState)>,
+    mut units: MoveOrderUnits,
     mut events: EventReader<MovementTargetEvent>,
+    grid: Option<Res<NavGridResource>>,
+    mut pending: ResMut<PendingFlowFields>,
 ) {
+    let mut orders: HashMap<IVec2, (Vec3, Vec<RouteRequest>)> = HashMap::new();
     for ev in events.read() {
-        let Ok((mut mv, mut pf)) = units.get_mut(ev.entity) else { continue };
-        commands.entity(ev.entity).remove::<PathTask>();
+        let Ok((tf, mut mv, mut pf)) = units.query.get_mut(ev.entity) else { continue };
         mv.target_position = Some(ev.target_position);
-        pf.path.clear();
-        pf.path_index = 0;
-        pf.last_pathfinding_failure = f32::NEG_INFINITY;
-        pf.last_failed_target = None;
+        pf.route = Route::Direct;
+        let Some(grid) = grid.as_ref() else { continue };
+        let start = tf.translation;
+        let is_short_clear = flat_dist(start, ev.target_position) <= LINE_CHECK_RANGE
+            && has_clear_line(&grid.0, start, ev.target_position);
+        if is_short_clear {
+            continue;
+        }
+        pf.route = Route::Pending;
+        let key = grid.0.cell_of(ev.group_goal).unwrap_or(IVec2::MIN);
+        orders
+            .entry(key)
+            .or_insert_with(|| (ev.group_goal, Vec::new()))
+            .1
+            .push(RouteRequest { entity: ev.entity, start, target: ev.target_position });
+    }
+    let Some(grid) = grid else { return };
+    for (goal, requests) in orders.into_values() {
+        pending.spawn(&grid.0, goal, requests);
     }
 }
 
@@ -76,8 +109,7 @@ fn stop_unit_movement(
         let Ok((mut mv, mut pf)) = units.get_mut(ev.entity) else { continue };
         mv.target_position = None;
         mv.current_velocity = Vec3::ZERO;
-        pf.path.clear();
-        pf.path_index = 0;
+        pf.route = Route::Direct;
     }
 }
 
@@ -85,118 +117,75 @@ fn stop_unit_movement(
 // Movement
 // ---------------------------------------------------------------------------
 
+/// Every unit that can move.
+#[derive(SystemParam)]
+pub(crate) struct MovingUnits<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static mut Transform, &'static mut Movement, &'static PathfindingState, &'static RTSUnit)>,
+}
+
 struct StepCtx<'a> {
     terrain: &'a StaticTerrainHeights,
+    normals: &'a TerrainNormals,
     dt: f32,
 }
 
-/// Give up waiting for a path after this many seconds of consecutive failures.
-const PATHFINDING_GIVE_UP_SECS: f32 = 6.0;
-/// Frames a unit must be stuck at the same waypoint before skipping ahead.
-const STUCK_FRAME_THRESHOLD: u32 = 60;
-
-/// Moves all units each frame, following their A* path.
-/// Fires `UnitArrivedEvent` when a unit exhausts its path and clears its target.
-///
-/// `stuck_tracker` maps each entity to the number of consecutive frames it has
-/// remained on the same waypoint. When the threshold is reached the unit skips
-/// two waypoints, keeping its original destination intact.
+/// Moves all units in parallel. Fires `UnitArrivedEvent` when a unit reaches its target.
+#[instrument(skip_all)]
 fn move_units(
-    mut units: Query<(Entity, &mut Transform, &mut Movement, &mut PathfindingState, &RTSUnit)>,
+    mut units: MovingUnits,
     terrain: Res<StaticTerrainHeights>,
     terrain_normals: Res<TerrainNormals>,
     time: Res<Time>,
     mut arrived: EventWriter<UnitArrivedEvent>,
-    mut stuck_tracker: Local<HashMap<Entity, u32>>,
+    mut arrivals: Local<Parallel<Vec<Entity>>>,
 ) {
-    let dt = time.delta_secs().min(0.033);
-    let ctx = StepCtx { terrain: &terrain, dt };
-    for (entity, mut tf, mut mv, mut pf, rts_unit) in units.iter_mut() {
-        if mv.target_position.is_none() {
-            mv.current_velocity = Vec3::ZERO;
-            snap_to_terrain(&mut tf, ctx.terrain);
-            stuck_tracker.remove(&entity);
-            continue;
-        }
-        // Give up if pathfinding has been failing too long with no path to follow.
-        let now = time.elapsed_secs();
-        if pf.path.is_empty()
-            && pf.last_pathfinding_failure.is_finite()
-            && now - pf.last_pathfinding_failure > PATHFINDING_GIVE_UP_SECS
-        {
-            mv.target_position = None;
-            mv.current_velocity = Vec3::ZERO;
-            pf.path_index = 0;
-            pf.last_pathfinding_failure = f32::NEG_INFINITY;
-            arrived.send(UnitArrivedEvent { entity });
-            stuck_tracker.remove(&entity);
-            continue;
-        }
-        let prev_index = pf.path_index;
-        if let Some(dir) = step_path(&mut tf, &mut mv, &mut pf, &ctx) {
-            update_rotation(&mut tf, dir, rts_unit, &terrain_normals, dt);
-        }
-        // target_position cleared inside step_path means path was exhausted — unit arrived.
-        if mv.target_position.is_none() {
-            arrived.send(UnitArrivedEvent { entity });
-            stuck_tracker.remove(&entity);
-            continue;
-        }
-        // Track stuck state: only when we have a live path and didn't just advance.
-        if !pf.path.is_empty() {
-            if pf.path_index > prev_index {
-                stuck_tracker.remove(&entity);
-            } else {
-                let count = stuck_tracker.entry(entity).or_insert(0);
-                *count += 1;
-                if *count >= STUCK_FRAME_THRESHOLD {
-                    // Skip 2 waypoints ahead without changing the destination.
-                    pf.path_index = (pf.path_index + 2).min(pf.path.len());
-                    stuck_tracker.remove(&entity);
-                }
+    let ctx = StepCtx { terrain: &terrain, normals: &terrain_normals, dt: time.delta_secs().min(0.033) };
+    units.query.par_iter_mut().for_each_init(
+        || arrivals.borrow_local_mut(),
+        |local, (entity, mut tf, mut mv, pf, rts_unit)| {
+            if step_unit(&mut tf, &mut mv, pf, &ctx) {
+                local.push(entity);
             }
-        } else {
-            // Waiting for a path — don't count as stuck.
-            stuck_tracker.remove(&entity);
-        }
-    }
+            if let Some(dir) = mv.current_velocity.try_normalize() {
+                update_rotation(&mut tf, dir, rts_unit, ctx.normals, ctx.dt);
+            }
+        },
+    );
+    arrived.send_batch(arrivals.drain().map(|entity| UnitArrivedEvent { entity }));
 }
 
-/// Ground units: follow A* path waypoints. Returns None while waiting for path.
-fn step_path(
-    tf: &mut Transform,
-    mv: &mut Movement,
-    pf: &mut PathfindingState,
-    ctx: &StepCtx,
-) -> Option<Vec3> {
-    // Skip past waypoints we've already reached.
-    while pf.path_index < pf.path.len() {
-        if flat_dist(tf.translation, pf.path[pf.path_index]) >= mc::ARRIVAL_THRESHOLD {
-            break;
-        }
-        pf.path_index += 1;
+/// Advances one unit toward its target. Returns true on the frame it arrives.
+fn step_unit(tf: &mut Transform, mv: &mut Movement, pf: &PathfindingState, ctx: &StepCtx) -> bool {
+    mv.current_velocity = Vec3::ZERO;
+    let Some(target) = mv.target_position else {
+        snap_to_terrain(tf, ctx.terrain);
+        return false;
+    };
+    let distance = flat_dist(tf.translation, target);
+    if distance < mc::ARRIVAL_THRESHOLD {
+        mv.target_position = None;
+        return true;
     }
-
-    if pf.path_index >= pf.path.len() {
-        // Path exhausted → destination reached.
-        if !pf.path.is_empty() {
-            mv.target_position = None;
-            mv.current_velocity = Vec3::ZERO;
-            pf.path.clear();
-            pf.path_index = 0;
-        }
-        // path is empty → waiting for pathfinding system to compute one.
-        return None;
-    }
-
-    let wp = pf.path[pf.path_index];
-    let dir = flat_dir(tf.translation, wp);
+    let Some(dir) = steering_direction(tf.translation, target, distance, &pf.route) else {
+        snap_to_terrain(tf, ctx.terrain);
+        return false;
+    };
     mv.current_velocity = dir * mv.max_speed;
     tf.translation.x += mv.current_velocity.x * ctx.dt;
     tf.translation.z += mv.current_velocity.z * ctx.dt;
     snap_to_terrain(tf, ctx.terrain);
     clamp_to_map(tf);
-    Some(dir)
+    false
+}
+
+/// Direction to travel this frame, or `None` while the unit's flow field is still building.
+fn steering_direction(pos: Vec3, target: Vec3, distance: f32, route: &Route) -> Option<Vec3> {
+    match route {
+        Route::Pending => None,
+        Route::Direct => Some(flat_dir(pos, target)),
+        Route::Field(_) if distance < DIRECT_STEER_RANGE => Some(flat_dir(pos, target)),
+        Route::Field(field) => Some(field.direction(pos).unwrap_or_else(|| flat_dir(pos, target))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -235,10 +224,10 @@ fn update_rotation(
     if dir.length_squared() <= mc::DIRECTION_THRESHOLD * mc::DIRECTION_THRESHOLD {
         return;
     }
-    // Fourmi/CairnsBirdwing GLBs face backward — negate the formula to compensate.
+    // CairnsBirdwing GLB faces backward — negate the formula to compensate.
     // Dragonfly GLB is rotated 90° CCW from the forward direction.
     let yaw = match rts_unit.unit_type.as_ref() {
-        Some(UnitType::Fourmi | UnitType::CairnsBirdwing) => {
+        Some(UnitType::CairnsBirdwing) => {
             Quat::from_rotation_y(-dir.x.atan2(-dir.z))
         }
         Some(UnitType::Dragonfly) => {

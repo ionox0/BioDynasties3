@@ -7,6 +7,8 @@ use bevy::prelude::*;
 use crate::core::components::RTSUnit;
 use super::events::MovementTargetEvent;
 use super::formation_events::FormationMoveEvent;
+use super::pathfinding::grid::NavGrid;
+use super::pathfinding::systems::NavGridResource;
 
 /// Tags a unit as part of a formation, recording its slot offset.
 // Owned by: FormationPlugin (apply_formation_move)
@@ -17,6 +19,8 @@ pub struct Formation {
 }
 
 const SPACING: f32 = 35.0;
+/// How far (in nav cells) a slot may be nudged off blocked terrain.
+const SLOT_SNAP_RING: i32 = 8;
 
 pub struct FormationPlugin;
 
@@ -27,12 +31,13 @@ impl Plugin for FormationPlugin {
     }
 }
 
-/// Assigns staggered movement destinations so units spread into a grid.
+/// Assigns each unit a slot in a square grid; the whole group shares one flow field to the centre.
 fn apply_formation_move(
     mut commands: Commands,
     mut events: EventReader<FormationMoveEvent>,
     unit_q: Query<&RTSUnit>,
     mut move_events: EventWriter<MovementTargetEvent>,
+    grid: Option<Res<NavGridResource>>,
 ) {
     for ev in events.read() {
         let columns = default_columns(ev.units.len());
@@ -42,19 +47,26 @@ fn apply_formation_move(
             }
             let offset = grid_offset(i, columns);
             commands.entity(entity).insert(Formation { slot_offset: offset });
-            move_events.send(MovementTargetEvent {
-                entity,
-                target_position: ev.target + offset,
-            });
+            let slot = grid.as_ref().map_or(ev.target + offset, |g| passable_slot(&g.0, ev.target + offset));
+            move_events.send(MovementTargetEvent { entity, target_position: slot, group_goal: ev.target });
         }
     }
 }
 
+/// Roughly square formation: √n columns.
 fn default_columns(count: usize) -> u32 {
-    match count {
-        0..=4 => 2,
-        5..=9 => 3,
-        _ => 4,
+    ((count as f32).sqrt().ceil() as u32).max(2)
+}
+
+/// Moves a slot that lands on blocked terrain to the centre of the nearest passable cell.
+fn passable_slot(grid: &NavGrid, slot: Vec3) -> Vec3 {
+    let Some(cell) = grid.cell_of(slot) else { return slot };
+    match grid.nearest_passable(cell, SLOT_SNAP_RING) {
+        Some(open) if open != cell => {
+            let center = grid.cell_center(open);
+            Vec3::new(center.x, slot.y, center.y)
+        }
+        _ => slot,
     }
 }
 

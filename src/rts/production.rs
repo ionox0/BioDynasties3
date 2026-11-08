@@ -85,6 +85,6 @@ fn production_queue_system(
         let dist = rng.gen_range(0.0..RALLY_RADIUS);
         let rally_xz = spawn.terrain.find_passable_near((tf.translation + Vec3::new(angle.cos() * dist, 0.0, angle.sin() * dist)).xz());
         let rally = Vec3::new(rally_xz.x, spawn.terrain.get_height(rally_xz.x, rally_xz.y), rally_xz.y);
-        spawn.move_events.send(MovementTargetEvent { entity: spawned, target_position: rally });
+        spawn.move_events.send(MovementTargetEvent::new(spawned, rally));
     }
 }

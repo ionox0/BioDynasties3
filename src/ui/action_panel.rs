@@ -291,7 +291,7 @@ fn production_units(building_type: &BuildingType) -> Vec<UnitType> {
     match building_type {
         BuildingType::Queen => vec![UnitType::Fourmi, UnitType::Bee],
         BuildingType::Nursery => vec![UnitType::CairnsBirdwing, UnitType::Dragonfly],
-        BuildingType::WarriorChamber => vec![UnitType::RolyPoly, UnitType::Scorpion, UnitType::GoliathBirdeater, UnitType::RhinoBeetle],
+        BuildingType::WarriorChamber => vec![UnitType::RolyPoly, UnitType::Scorpion, UnitType::GoliathBirdeater, UnitType::RhinoBeetle, UnitType::EmperorScorpion, UnitType::MajestyBeetle],
     }
 }
 
@@ -305,5 +305,7 @@ fn unit_label(unit_type: &UnitType) -> &'static str {
         UnitType::Scorpion => "Scorpion",
         UnitType::GoliathBirdeater => "Goliath Birdeater",
         UnitType::RhinoBeetle => "Rhino Beetle",
+        UnitType::EmperorScorpion => "Emperor Scorpion",
+        UnitType::MajestyBeetle => "Majesty Beetle",
     }
 }

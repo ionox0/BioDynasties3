@@ -1,152 +1,68 @@
-//! Bevy systems for async A* path requests and result collection.
+//! Bevy systems that build flow fields off the main thread and hand them to units.
 //!
-//! Ownership: `PathfindingState.path` and `path_index` (written here on task completion).
+//! Ownership: `PathfindingState.route` (written by MovementPlugin through these helpers).
 
 use bevy::prelude::*;
-use bevy::tasks::{AsyncComputeTaskPool, Task, block_on};
 use bevy::tasks::futures_lite::future;
+use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
+use std::sync::Arc;
+use tracing::instrument;
 
-use crate::core::components::{Movement, PathfindingState, RTSUnit};
-use crate::world::static_terrain::StaticTerrainHeights;
-use super::cache::{try_cached_path, update_path_cache};
-use super::grid::{PathfindingGridResource, TerrainPathfindingGrid};
+use crate::core::components::{Movement, PathfindingState, Route};
+use super::flow_field::FlowField;
+use super::grid::NavGrid;
 
-const PATHFINDING_RETRY_COOLDOWN: f32 = 2.0;
-const PATH_JITTER_RADIUS: f32 = 20.0;
-const PATH_JITTER_SPACING: usize = 25;
+/// Coarse passability grid shared with background flow-field builds.
+#[derive(Resource)]
+pub struct NavGridResource(pub Arc<NavGrid>);
 
-/// Attached to a unit while an async A* search is in progress.
-/// Removed via `Commands` when the task completes or the unit's target changes.
-#[derive(Component)]
-pub struct PathTask {
-    task: Task<Option<Vec<Vec3>>>,
-    raw_target: Vec3,
+/// A unit waiting on a flow field, with the target it was ordered to.
+pub struct RouteRequest {
+    pub entity: Entity,
+    pub start: Vec3,
+    pub target: Vec3,
 }
 
-fn unit_needs_path(mv: &Movement, pf: &PathfindingState) -> bool {
-    mv.target_position.is_some() && (pf.path.is_empty() || pf.path_index >= pf.path.len())
+struct PendingField {
+    task: Task<FlowField>,
+    units: Vec<(Entity, Vec3)>,
 }
 
-fn should_retry(now: f32, pf: &PathfindingState) -> bool {
-    now - pf.last_pathfinding_failure >= PATHFINDING_RETRY_COOLDOWN
-}
+/// Flow fields still being built.
+// Owned by: MovementPlugin (apply_movement_targets, poll_flow_fields)
+#[derive(Resource, Default)]
+pub struct PendingFlowFields(Vec<PendingField>);
 
-fn resolve_target(raw: Vec3, grid: &TerrainPathfindingGrid, terrain: &StaticTerrainHeights) -> Option<Vec3> {
-    if grid.world_to_grid(raw).map(|g| grid.is_passable(g.0, g.1)).unwrap_or(false) {
-        Some(raw)
-    } else {
-        grid.find_nearest_passable(raw, terrain)
+impl PendingFlowFields {
+    /// Starts one background build toward `goal` shared by every unit in `requests`.
+    pub fn spawn(&mut self, grid: &Arc<NavGrid>, goal: Vec3, requests: Vec<RouteRequest>) {
+        let grid = Arc::clone(grid);
+        let starts: Vec<Vec3> = requests.iter().map(|r| r.start).collect();
+        let task = AsyncComputeTaskPool::get().spawn(async move { build_field(grid, goal, &starts) });
+        let units = requests.into_iter().map(|r| (r.entity, r.target)).collect();
+        self.0.push(PendingField { task, units });
     }
 }
 
-/// Checks the path cache, then spawns an async A* task for each unit that needs a route.
-/// Units with an in-flight `PathTask` are skipped (`Without<PathTask>` filter).
-pub fn request_paths(
-    mut commands: Commands,
-    mut units: Query<
-        (Entity, &Transform, &Movement, &mut PathfindingState),
-        (With<RTSUnit>, Without<PathTask>),
-    >,
-    grid_res: Option<Res<PathfindingGridResource>>,
-    time: Res<Time>,
-) {
-    let Some(grid_res) = grid_res else { return };
-    let now = time.elapsed_secs();
-    let task_pool = AsyncComputeTaskPool::get();
-
-    for (entity, transform, movement, mut pf) in units.iter_mut() {
-        if !unit_needs_path(movement, &pf) || !should_retry(now, &pf) {
-            continue;
-        }
-        let Some(raw_target) = movement.target_position else { continue };
-
-        // Cache hit — apply immediately with no async overhead.
-        if let Some(path) = try_cached_path(&grid_res.grid, &mut pf, raw_target, transform.translation, now) {
-            pf.path = jitter_path(path, entity);
-            pf.path_index = 0;
-            continue;
-        }
-
-        // Cache miss — run A* on a background thread.
-        let grid = grid_res.grid.clone();
-        let terrain = grid_res.terrain.clone();
-        let start = transform.translation;
-        let task = task_pool.spawn(async move {
-            let start = grid.find_nearest_passable(start, &terrain).unwrap_or(start);
-            let target = resolve_target(raw_target, &grid, &terrain)?;
-            grid.find_path(start, target, &terrain)
-        });
-        commands.entity(entity).insert(PathTask { task, raw_target });
-    }
+#[instrument(skip_all, fields(units = starts.len()))]
+fn build_field(grid: Arc<NavGrid>, goal: Vec3, starts: &[Vec3]) -> FlowField {
+    FlowField::build(grid, goal, starts)
 }
 
-/// Polls in-flight `PathTask`s and writes completed results to `PathfindingState`.
-pub fn poll_path_tasks(
-    mut commands: Commands,
-    mut units: Query<(Entity, &Movement, &mut PathfindingState, &mut PathTask)>,
-    grid_res: Option<Res<PathfindingGridResource>>,
-    time: Res<Time>,
+/// Gives each finished flow field to the units still heading for the target it was built for.
+pub fn poll_flow_fields(
+    mut pending: ResMut<PendingFlowFields>,
+    mut units: Query<(&Movement, &mut PathfindingState)>,
 ) {
-    let now = time.elapsed_secs();
-
-    for (entity, movement, mut pf, mut path_task) in units.iter_mut() {
-        let Some(result) = block_on(future::poll_once(&mut path_task.task)) else { continue };
-
-        let raw_target = path_task.raw_target;
-        commands.entity(entity).remove::<PathTask>();
-
-        // Discard stale result if the target changed while the task was in flight.
-        if movement.target_position != Some(raw_target) {
-            continue;
-        }
-
-        match result {
-            Some(path) if !path.is_empty() => {
-                if let Some(grid) = grid_res.as_ref() {
-                    if let Some(goal_grid) = grid.grid.world_to_grid(raw_target) {
-                        update_path_cache(&mut pf, goal_grid, &path, now);
-                    }
-                }
-                pf.path = jitter_path(path, entity);
-                pf.path_index = 0;
-            }
-            _ => {
-                pf.last_pathfinding_failure = now;
-                pf.last_failed_target = Some(raw_target);
+    pending.0.retain_mut(|field| {
+        let Some(built) = block_on(future::poll_once(&mut field.task)) else { return true };
+        let built = Arc::new(built);
+        for &(entity, target) in &field.units {
+            let Ok((movement, mut pf)) = units.get_mut(entity) else { continue };
+            if movement.target_position == Some(target) && matches!(pf.route, Route::Pending) {
+                pf.route = Route::Field(Arc::clone(&built));
             }
         }
-    }
-}
-
-/// Builds a sparse path from the A* result so units in the same group take
-/// slightly different routes. One waypoint is kept per PATH_JITTER_SPACING
-/// interval and laterally offset by ±PATH_JITTER_RADIUS. Non-jittered
-/// intermediate waypoints are discarded so the unit travels straight between
-/// sparse points rather than snapping back to the original line.
-/// The clean path is cached before this is called.
-fn jitter_path(path: Vec<Vec3>, entity: Entity) -> Vec<Vec3> {
-    let len = path.len();
-    if len < 3 {
-        return path;
-    }
-    let mut result = vec![path[0]];
-    for i in (PATH_JITTER_SPACING..len - 1).step_by(PATH_JITTER_SPACING) {
-        let prev_i = i - PATH_JITTER_SPACING;
-        let next_i = (i + PATH_JITTER_SPACING).min(len - 1);
-        let dir = Vec3::new(
-            path[next_i].x - path[prev_i].x,
-            0.0,
-            path[next_i].z - path[prev_i].z,
-        )
-        .normalize_or_zero();
-        let lateral = Vec3::new(-dir.z, 0.0, dir.x);
-        let hash = entity
-            .index()
-            .wrapping_mul(2_654_435_761)
-            .wrapping_add((i as u32).wrapping_mul(1_234_567_891));
-        let offset = (hash % 3) as i32 - 1;
-        result.push(path[i] + lateral * (offset as f32 * PATH_JITTER_RADIUS));
-    }
-    result.push(path[len - 1]);
-    result
+        false
+    });
 }

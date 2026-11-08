@@ -11,38 +11,20 @@
 
 
 Ideas:
-- abstract the systems into an "RTS engine"
-  - allow any models to be applied to units / buildings / resources, so we can create arbitrary RTS games
+
+- abstract the systems into an "RTS engine" with swappable models
   - "space RTS" with spaceships, "medieval RTS" with knights and castles, etc
 
-- needs a core strategy system that makes it more interesting / challenging
-  - units have weaknesses / strengths against other units, so players need to build a variety of units to be effective
+- units have weaknesses / strengths against other units, so players need to build a variety of units to be effective
 
 - AI should have different "strategies" that make them more aggressive, defensive, etc
 
-- Make 2 AIs that play each other √
-  - train a neural net to play the game, and have it play against itself to improve over time?
-
 - Fog of War
-
-- stop animations when in Idle state
 
 - underground digging with map transparency
 
-- tilt units based on terrain normals
-
 - improve UI design
-
-- fix AI not building / generating military units
 
 - new buildings are not same size as initial ones - is base initialization using common building functions?
 
-- random seed for map generation
-
-- AI should not queue more goals for unit production than they have resources for
-
 - use normals to prevent buildings from being placed on tilted terrain
-
-- rotate terrain texture tiles to avoid repetition
-
-- 
