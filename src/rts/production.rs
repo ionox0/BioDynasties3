@@ -69,8 +69,9 @@ fn production_queue_system(
     for (building, tf, mut queue) in buildings.iter_mut() {
         let Some(unit_type) = queue.queued.first().cloned() else { continue };
         queue.progress += time.delta_secs();
-        if queue.progress < queue.production_time { continue; }
-        queue.progress -= queue.production_time;
+        let unit_time = queue.time_for(&unit_type);
+        if queue.progress < unit_time { continue; }
+        queue.progress -= unit_time;
         queue.queued.remove(0);
         let raw = tf.translation + Vec3::new(30.0, 0.0, 0.0);
         let pos = spawn.building_grid

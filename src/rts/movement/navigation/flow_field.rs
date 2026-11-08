@@ -59,26 +59,34 @@ impl FlowField {
         Self { costs, grid }
     }
 
-    /// Direction toward the cheapest neighboring cell, or `None` at the goal / outside the field.
+    /// Downhill direction at `pos`, or `None` at the goal / outside the field.
+    /// `preference` (length below 1) favours the cheaper neighbors lying along it, so each
+    /// unit can take its own branch while still always heading downhill.
     /// Units standing on blocked cells first head for the nearest open cell.
-    pub fn direction(&self, pos: Vec3) -> Option<Vec3> {
+    pub fn direction(&self, pos: Vec3, preference: Vec2) -> Option<Vec3> {
         let cell = self.grid.cell_of(pos)?;
-        let next = if self.grid.is_passable(cell) {
-            self.cheapest_neighbor(cell)?
-        } else {
-            self.grid.nearest_passable(cell, SNAP_RING)?
-        };
-        let center = self.grid.cell_center(next);
+        if self.grid.is_passable(cell) {
+            return self.downhill(cell, preference);
+        }
+        let center = self.grid.cell_center(self.grid.nearest_passable(cell, SNAP_RING)?);
         Some(Vec3::new(center.x - pos.x, 0.0, center.y - pos.z).normalize_or_zero())
     }
 
-    fn cheapest_neighbor(&self, cell: IVec2) -> Option<IVec2> {
+    /// Average of the directions to every cheaper neighbor, weighted by how steeply cost drops
+    /// and by `preference`. It depends only on the cell, not the unit's spot in it, so units
+    /// sharing a cell travel side by side instead of all converging on the same point.
+    fn downhill(&self, cell: IVec2, preference: Vec2) -> Option<Vec3> {
         let own = self.costs.get(&self.grid.index(cell)).copied().unwrap_or(u32::MAX);
-        passable_neighbors(&self.grid, cell)
-            .filter_map(|(next, _)| Some((next, *self.costs.get(&self.grid.index(next))?)))
-            .filter(|&(_, cost)| cost < own)
-            .min_by_key(|&(_, cost)| cost)
-            .map(|(next, _)| next)
+        let sum: Vec2 = passable_neighbors(&self.grid, cell)
+            .filter_map(|(next, step)| {
+                let cost = *self.costs.get(&self.grid.index(next))?;
+                let drop = own.checked_sub(cost).filter(|&d| d > 0)?;
+                let dir = (next - cell).as_vec2().normalize();
+                Some(dir * drop as f32 / step as f32 * (1.0 + preference.dot(dir)))
+            })
+            .sum();
+        let dir = sum.try_normalize()?;
+        Some(Vec3::new(dir.x, 0.0, dir.y))
     }
 }
 
@@ -123,15 +131,20 @@ mod tests {
     #[test]
     fn units_route_through_the_gap_without_entering_walls() {
         let grid = walled_grid();
-        let (start, goal) = (world(IVec2::new(2, 2)), world(IVec2::new(17, 2)));
-        let field = FlowField::build(Arc::clone(&grid), goal, &[start]);
-        let mut pos = start;
-        for _ in 0..2000 {
-            let Some(dir) = field.direction(pos) else { break };
-            pos += dir * CELL_SIZE * 0.25;
-            assert!(grid.cell_of(pos).is_some_and(|c| grid.is_passable(c)), "entered a wall at {pos:?}");
+        let goal = world(IVec2::new(17, 2));
+        // Off-centre starts and per-unit preferences must never lead into a wall.
+        let starts = [(Vec3::ZERO, Vec2::ZERO), (Vec3::new(3.0, 0.0, -3.0), Vec2::Y * 0.9), (Vec3::new(-3.0, 0.0, 3.0), Vec2::NEG_X * 0.9)];
+        for (offset, preference) in starts {
+            let start = world(IVec2::new(2, 2)) + offset;
+            let field = FlowField::build(Arc::clone(&grid), goal, &[start]);
+            let mut pos = start;
+            for _ in 0..2000 {
+                let Some(dir) = field.direction(pos, preference) else { break };
+                pos += dir * CELL_SIZE * 0.25;
+                assert!(grid.cell_of(pos).is_some_and(|c| grid.is_passable(c)), "entered a wall at {pos:?}");
+            }
+            assert_eq!(grid.cell_of(pos), grid.cell_of(goal), "did not reach the goal cell");
         }
-        assert_eq!(grid.cell_of(pos), grid.cell_of(goal), "did not reach the goal cell");
     }
 
     #[test]

@@ -66,12 +66,16 @@ struct BuildButton {
     building_type: BuildingType,
 }
 
-/// Button that queues a unit for production.
+/// Button that queues `count` units for production.
 #[derive(Component, Clone)]
 pub struct UnitProductionButton {
     pub building: Entity,
     pub unit_type: UnitType,
+    pub count: usize,
 }
+
+/// How many units the batch button under each unit queues at once.
+const BATCH_SIZE: usize = 10;
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
@@ -196,15 +200,25 @@ fn spawn_build_button(parent: &mut ChildBuilder, bt: BuildingType, name: &str, c
         });
 }
 
+/// A unit's produce button, with a smaller button beneath it that queues a batch.
 fn spawn_unit_button(parent: &mut ChildBuilder, building: Entity, unit_type: UnitType) {
-    let label = unit_label(&unit_type);
+    let column = Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), ..default() };
+    parent.spawn(column).with_children(|col| {
+        let single = UnitProductionButton { building, unit_type, count: 1 };
+        spawn_production_button(col, single, unit_label(&unit_type).to_string(), 50.0);
+        let batch = UnitProductionButton { building, unit_type, count: BATCH_SIZE };
+        spawn_production_button(col, batch, format!("×{BATCH_SIZE}"), 18.0);
+    });
+}
+
+fn spawn_production_button(parent: &mut ChildBuilder, button: UnitProductionButton, label: String, height: f32) {
     parent
         .spawn((
-            UnitProductionButton { building, unit_type },
+            button,
             Button,
             Node {
                 width: Val::Px(64.0),
-                height: Val::Px(50.0),
+                height: Val::Px(height),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 border: UiRect::all(Val::Px(1.0)),
@@ -257,7 +271,8 @@ fn handle_unit_buttons(
 ) {
     for (interaction, btn) in btn_q.query.iter() {
         if *interaction == Interaction::Pressed {
-            queue_events.send(QueueProductionEvent { building: btn.building, unit_type: btn.unit_type });
+            let event = QueueProductionEvent { building: btn.building, unit_type: btn.unit_type };
+            queue_events.send_batch(std::iter::repeat_n(event, btn.count));
         }
     }
 }
@@ -285,7 +300,7 @@ fn format_queue(queue: &ProductionQueue) -> String {
     let Some(current) = queue.queued.first() else {
         return "Queue: empty".to_string();
     };
-    let pct = (queue.progress / queue.production_time * 100.0) as u32;
+    let pct = (queue.progress / queue.time_for(current) * 100.0) as u32;
     let waiting = queue.queued.len().saturating_sub(1);
     if waiting > 0 {
         format!("Producing: {} ({}%)  +{} waiting", unit_label(current), pct, waiting)

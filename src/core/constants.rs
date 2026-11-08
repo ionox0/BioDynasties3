@@ -18,8 +18,6 @@ pub mod movement {
     pub const ARRIVAL_THRESHOLD: f32 = 8.0;
     /// Height units stand above the terrain surface.
     pub const DEFAULT_SPAWN_HEIGHT: f32 = 0.5;
-    /// Minimum direction length before a unit turns to face it.
-    pub const DIRECTION_THRESHOLD: f32 = 0.1;
     /// Maximum turning speed per frame.
     pub const MAX_TURN_SPEED: f32 = 0.4;
 }

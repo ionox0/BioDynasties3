@@ -117,10 +117,19 @@ fn stop_unit_movement(
 // Movement
 // ---------------------------------------------------------------------------
 
+type MovingUnitData = (
+    Entity,
+    &'static mut Transform,
+    &'static mut Movement,
+    &'static Route,
+    &'static RTSUnit,
+    Option<&'static Climbing>,
+);
+
 /// Every unit that can move.
 #[derive(SystemParam)]
 pub(crate) struct MovingUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut Transform, &'static mut Movement, &'static Route, &'static RTSUnit)>,
+    query: Query<'w, 's, MovingUnitData>,
 }
 
 /// Terrain lookups movement needs: surface height and slope.
@@ -134,6 +143,40 @@ struct StepCtx<'a> {
     terrain: &'a StaticTerrainHeights,
     normals: &'a TerrainNormals,
     dt: f32,
+    elapsed: f32,
+}
+
+/// Peak heading wobble either side of the route, in radians.
+const WANDER_ANGLE: f32 = 0.6;
+/// How strongly each unit favours its own branch of the flow field (0 = none, below 1).
+const BRANCH_PREFERENCE: f32 = 0.98;
+/// Each unit's fixed pace differs from its max speed by up to this fraction either way.
+const SPEED_VARIATION: f32 = 0.2;
+/// While moving, each unit's speed surges and slows by up to this fraction either way.
+const SPEED_SURGE: f32 = 0.35;
+
+/// Per-unit variation that keeps crowds from moving in lockstep straight lines.
+struct Wander {
+    /// Heading offset this frame, in radians.
+    angle: f32,
+    /// Multiplier on the unit's max speed.
+    speed: f32,
+    /// Slowly turning bias toward one of the flow field's downhill branches.
+    preference: Vec2,
+}
+
+impl Wander {
+    /// Deterministic per entity: each unit gets its own phase, rhythm and pace.
+    fn of(entity: Entity, elapsed: f32) -> Self {
+        let seed = |salt: u32| (entity.index().wrapping_add(salt).wrapping_mul(2_654_435_761) >> 8) as f32 / (1 << 24) as f32;
+        let phase = elapsed * (1.0 + seed(1) * 1.5) + seed(2) * std::f32::consts::TAU;
+        let angle = WANDER_ANGLE * (phase.sin() + 0.5 * (phase * 2.3).sin()) / 1.5;
+        let pace = SPEED_VARIATION * (seed(3) * 2.0 - 1.0);
+        let surge = SPEED_SURGE * (elapsed * (0.7 + seed(4)) + seed(5) * std::f32::consts::TAU).sin();
+        let turn = elapsed * (0.15 + seed(6) * 0.3) + seed(7) * std::f32::consts::TAU;
+        let preference = Vec2::from_angle(turn) * BRANCH_PREFERENCE;
+        Self { angle, speed: 1.0 + pace + surge, preference }
+    }
 }
 
 /// Moves all units in parallel. Fires `UnitArrivedEvent` when a unit reaches its target.
@@ -145,23 +188,31 @@ fn move_units(
     mut arrived: EventWriter<UnitArrivedEvent>,
     mut arrivals: Local<Parallel<Vec<Entity>>>,
 ) {
-    let ctx = StepCtx { terrain: &terrain.heights, normals: &terrain.normals, dt: time.delta_secs().min(0.033) };
+    let ctx = StepCtx {
+        terrain: &terrain.heights,
+        normals: &terrain.normals,
+        dt: time.delta_secs().min(0.033),
+        elapsed: time.elapsed_secs(),
+    };
     units.query.par_iter_mut().for_each_init(
         || arrivals.borrow_local_mut(),
-        |local, (entity, mut tf, mut mv, route, rts_unit)| {
-            if step_unit(&mut tf, &mut mv, route, &ctx) {
+        |local, (entity, mut tf, mut mv, route, rts_unit, climbing)| {
+            if step_unit(&mut tf, &mut mv, route, &ctx, Wander::of(entity, ctx.elapsed)) {
                 local.push(entity);
             }
-            if let Some(dir) = mv.current_velocity.try_normalize() {
-                update_rotation(&mut tf, dir, rts_unit, ctx.normals, ctx.dt);
-            }
+            let normal = climbing.map_or_else(
+                || ctx.normals.get_normal(tf.translation.x, tf.translation.z),
+                |c| c.normal,
+            );
+            let heading = mv.current_velocity.try_normalize();
+            update_rotation(&mut tf, heading, rts_unit, normal, ctx.dt);
         },
     );
     arrived.send_batch(arrivals.drain().map(|entity| UnitArrivedEvent { entity }));
 }
 
 /// Advances one unit toward its target. Returns true on the frame it arrives.
-fn step_unit(tf: &mut Transform, mv: &mut Movement, route: &Route, ctx: &StepCtx) -> bool {
+fn step_unit(tf: &mut Transform, mv: &mut Movement, route: &Route, ctx: &StepCtx, wander: Wander) -> bool {
     mv.current_velocity = Vec3::ZERO;
     let Some(target) = mv.target_position else {
         snap_to_terrain(tf, ctx.terrain);
@@ -172,11 +223,11 @@ fn step_unit(tf: &mut Transform, mv: &mut Movement, route: &Route, ctx: &StepCtx
         mv.target_position = None;
         return true;
     }
-    let Some(dir) = steering_direction(tf.translation, target, distance, route) else {
+    let Some(dir) = steering_direction(tf.translation, target, distance, route, wander.preference) else {
         snap_to_terrain(tf, ctx.terrain);
         return false;
     };
-    mv.current_velocity = dir * mv.max_speed;
+    mv.current_velocity = Quat::from_rotation_y(wander.angle) * dir * mv.max_speed * wander.speed;
     tf.translation.x += mv.current_velocity.x * ctx.dt;
     tf.translation.z += mv.current_velocity.z * ctx.dt;
     snap_to_terrain(tf, ctx.terrain);
@@ -185,12 +236,12 @@ fn step_unit(tf: &mut Transform, mv: &mut Movement, route: &Route, ctx: &StepCtx
 }
 
 /// Direction to travel this frame, or `None` while the unit's flow field is still building.
-fn steering_direction(pos: Vec3, target: Vec3, distance: f32, route: &Route) -> Option<Vec3> {
+fn steering_direction(pos: Vec3, target: Vec3, distance: f32, route: &Route, preference: Vec2) -> Option<Vec3> {
     match route {
         Route::Pending => None,
         Route::Direct => Some(flat_dir(pos, target)),
         Route::Field(_) if distance < DIRECT_STEER_RANGE => Some(flat_dir(pos, target)),
-        Route::Field(field) => Some(field.direction(pos).unwrap_or_else(|| flat_dir(pos, target))),
+        Route::Field(field) => Some(field.direction(pos, preference).unwrap_or_else(|| flat_dir(pos, target))),
     }
 }
 
@@ -219,32 +270,27 @@ fn clamp_to_map(tf: &mut Transform) {
     tf.translation.z = tf.translation.z.clamp(-b, b);
 }
 
-/// Rotates the unit to face its direction of travel, tilted to match the terrain normal.
-fn update_rotation(
-    tf: &mut Transform,
-    dir: Vec3,
-    rts_unit: &RTSUnit,
-    normals: &TerrainNormals,
-    dt: f32,
-) {
-    if dir.length_squared() <= mc::DIRECTION_THRESHOLD * mc::DIRECTION_THRESHOLD {
-        return;
-    }
-    // CairnsBirdwing GLB faces backward — negate the formula to compensate.
-    // Dragonfly GLB is rotated 90° CCW from the forward direction.
-    let yaw = match rts_unit.unit_type.as_ref() {
-        Some(UnitType::CairnsBirdwing) => {
-            Quat::from_rotation_y(-dir.x.atan2(-dir.z))
-        }
-        Some(UnitType::Dragonfly) => {
-            Quat::from_rotation_y(dir.x.atan2(dir.z) + std::f32::consts::FRAC_PI_2)
-        }
-        _ => Quat::from_rotation_y(dir.x.atan2(dir.z)),
+/// Tilts the unit to match the surface `normal`, turning to face `heading` if it is moving.
+fn update_rotation(tf: &mut Transform, heading: Option<Vec3>, rts_unit: &RTSUnit, normal: Vec3, dt: f32) {
+    let yaw = match heading {
+        Some(dir) => facing_yaw(dir, rts_unit),
+        // Idle: keep the current facing, with the old tilt removed.
+        None => Quat::from_rotation_arc(tf.rotation * Vec3::Y, Vec3::Y) * tf.rotation,
     };
-    let normal = normals.get_normal(tf.translation.x, tf.translation.z);
     let tilt = Quat::from_rotation_arc(Vec3::Y, normal);
     let turn = (mc::MAX_TURN_SPEED * dt * 10.0).min(1.0);
     tf.rotation = tf.rotation.slerp(tilt * yaw, turn);
+}
+
+/// Yaw that faces `dir`, corrected for models authored facing another way.
+fn facing_yaw(dir: Vec3, rts_unit: &RTSUnit) -> Quat {
+    match rts_unit.unit_type.as_ref() {
+        // CairnsBirdwing GLB faces backward.
+        Some(UnitType::CairnsBirdwing) => Quat::from_rotation_y(-dir.x.atan2(-dir.z)),
+        // Dragonfly GLB is rotated 90° CCW from the forward direction.
+        Some(UnitType::Dragonfly) => Quat::from_rotation_y(dir.x.atan2(dir.z) + std::f32::consts::FRAC_PI_2),
+        _ => Quat::from_rotation_y(dir.x.atan2(dir.z)),
+    }
 }
 
 /// Keeps `Position` in sync with `Transform` so proximity-grid readers stay current.

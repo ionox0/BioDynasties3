@@ -2,6 +2,7 @@ use bevy::ecs::system::SystemParam;
 use crate::core::components::*;
 use crate::core::unit_stats::get_unit_stats;
 use bevy::prelude::*;
+use rand::Rng;
 use bevy_animation::graph::AnimationNodeIndex;
 use bevy_animation::prelude::{AnimationGraph, AnimationGraphHandle};
 
@@ -136,12 +137,17 @@ fn is_flying_unit(unit_type: &UnitType) -> bool {
     )
 }
 
+/// Loops `index`, resuming it if already active. A newly started clip gets a random
+/// start offset and slightly varied speed so a crowd's animations don't cycle in sync.
 fn play_with_speed(player: &mut AnimationPlayer, index: AnimationNodeIndex, unit_type: Option<&UnitType>) {
-    let speed = unit_type.map_or(1.0, |ut| get_unit_stats(ut).animation_speed);
-    if !player.is_playing_animation(index) {
-        player.stop_all();
+    if let Some(active) = player.animation_mut(index) {
+        active.resume();
+        return;
     }
-    player.play(index).repeat().set_speed(speed).resume();
+    let mut rng = rand::thread_rng();
+    let speed = unit_type.map_or(1.0, |ut| get_unit_stats(ut).animation_speed) * rng.gen_range(0.7..1.3);
+    player.stop_all();
+    player.play(index).repeat().set_speed(speed).seek_to(rng.gen_range(0.0..1.0));
 }
 
 /// glTF clip index for each animation role in a unit's model (`None` = model has no such clip).

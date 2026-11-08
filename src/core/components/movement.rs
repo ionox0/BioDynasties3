@@ -56,6 +56,16 @@ impl Default for ProximityCellTracker {
     }
 }
 
+/// Present while a unit is riding up over another unit's back.
+// Owned by: CollisionPlugin (separate_units)
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Climbing {
+    /// Height above the terrain.
+    pub height: f32,
+    /// Surface normal of the back being climbed, used to tilt the unit.
+    pub normal: Vec3,
+}
+
 // Owned by: CollisionPlugin (update_unit_proximity, separate_units)
 #[derive(Component, Debug, Clone)]
 pub struct CollisionRadius {
