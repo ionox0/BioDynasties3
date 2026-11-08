@@ -1,7 +1,7 @@
 //! Building occupancy grid — tracks exclusion zones around placed buildings.
 //!
-//! Separate from `TerrainPathfindingGrid` so A* routing is never affected by
-//! building placement. Used only to find clear spawn positions and validate
+//! Separate from the navigation grid (`NavGrid`) so flow-field routing is never
+//! affected by building placement. Used only to find clear spawn positions and validate
 //! AI building placements.
 
 use bevy::prelude::*;

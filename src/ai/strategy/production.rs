@@ -62,7 +62,7 @@ fn push_unit_goals(
         for _ in 0..affordable {
             goals.push(WORKER_PRIORITY, UnifiedGoal::BuildUnit {
                 building: entity,
-                unit_type: worker_type.clone(),
+                unit_type: worker_type,
                 player_id,
             });
         }

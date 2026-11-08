@@ -4,12 +4,11 @@
 //! Runs after `GameSet::RtsUpdate` so movement always resolves first.
 //!
 //! Design:
-//! - A* handles routing around static obstacles.
+//! - Flow fields handle routing around impassable terrain.
 //! - Building/environment separation always applies (units must not clip geometry).
 //! - Unit-unit separation only applies to **idle** units (no active target_position).
 //!   Moving units pass through each other briefly; they spread out once they arrive.
-//!   This prevents separation forces from fighting path-following and launching lead
-//!   units past their waypoints.
+//!   This prevents separation forces from fighting flow-field steering.
 
 use bevy::prelude::*;
 use bevy::ecs::system::SystemParam;
@@ -29,16 +28,14 @@ const BUILDING_BUFFER: f32 = 1.5;
 
 // --- SystemParam query structs ---
 
-/// RTSUnit entities eligible for separation (excludes static obstacle types).
+type SeparationData = (Entity, &'static mut Transform, &'static CollisionRadius, &'static Movement);
+/// Units that move (excludes buildings and environment objects, which are also obstacles).
+type Mobile = (With<RTSUnit>, Without<Building>, Without<EnvironmentObject>);
+
+/// RTSUnit entities eligible for separation.
 #[derive(SystemParam)]
-#[allow(clippy::type_complexity)]
 struct MobileUnits<'w, 's> {
-    query: Query<
-        'w,
-        's,
-        (Entity, &'static mut Transform, &'static CollisionRadius, &'static Movement),
-        (With<RTSUnit>, Without<Building>, Without<EnvironmentObject>),
-    >,
+    query: Query<'w, 's, SeparationData, Mobile>,
 }
 
 #[derive(SystemParam)]
@@ -56,21 +53,14 @@ struct SpatiallyTrackedUnits<'w, 's> {
     >,
 }
 
+type StaticBuilding = (With<Building>, Without<Movement>);
+type StaticEnvironment = (With<EnvironmentObject>, Without<Movement>);
+
+/// Buildings and environment objects units are pushed away from.
 #[derive(SystemParam)]
-#[allow(clippy::type_complexity)]
 struct StaticObstacles<'w, 's> {
-    buildings: Query<
-        'w,
-        's,
-        (&'static Position, &'static CollisionRadius),
-        (With<Building>, Without<Movement>),
-    >,
-    env: Query<
-        'w,
-        's,
-        (&'static Transform, &'static CollisionRadius),
-        (With<EnvironmentObject>, Without<Movement>),
-    >,
+    buildings: Query<'w, 's, (&'static Position, &'static CollisionRadius), StaticBuilding>,
+    env: Query<'w, 's, (&'static Transform, &'static CollisionRadius), StaticEnvironment>,
 }
 
 // --- Plugin ---

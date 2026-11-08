@@ -54,7 +54,7 @@ fn apply_production_queue_events(
 ) {
     for ev in events.read() {
         let Ok(mut queue) = queues.get_mut(ev.building) else { continue };
-        queue.queued.push(ev.unit_type.clone());
+        queue.queued.push(ev.unit_type);
     }
 }
 

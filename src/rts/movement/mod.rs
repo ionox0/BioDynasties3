@@ -123,6 +123,13 @@ pub(crate) struct MovingUnits<'w, 's> {
     query: Query<'w, 's, (Entity, &'static mut Transform, &'static mut Movement, &'static PathfindingState, &'static RTSUnit)>,
 }
 
+/// Terrain lookups movement needs: surface height and slope.
+#[derive(SystemParam)]
+pub(crate) struct TerrainSurface<'w> {
+    heights: Res<'w, StaticTerrainHeights>,
+    normals: Res<'w, TerrainNormals>,
+}
+
 struct StepCtx<'a> {
     terrain: &'a StaticTerrainHeights,
     normals: &'a TerrainNormals,
@@ -133,13 +140,12 @@ struct StepCtx<'a> {
 #[instrument(skip_all)]
 fn move_units(
     mut units: MovingUnits,
-    terrain: Res<StaticTerrainHeights>,
-    terrain_normals: Res<TerrainNormals>,
+    terrain: TerrainSurface,
     time: Res<Time>,
     mut arrived: EventWriter<UnitArrivedEvent>,
     mut arrivals: Local<Parallel<Vec<Entity>>>,
 ) {
-    let ctx = StepCtx { terrain: &terrain, normals: &terrain_normals, dt: time.delta_secs().min(0.033) };
+    let ctx = StepCtx { terrain: &terrain.heights, normals: &terrain.normals, dt: time.delta_secs().min(0.033) };
     units.query.par_iter_mut().for_each_init(
         || arrivals.borrow_local_mut(),
         |local, (entity, mut tf, mut mv, pf, rts_unit)| {

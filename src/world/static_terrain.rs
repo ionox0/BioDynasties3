@@ -68,17 +68,8 @@ impl Plugin for StaticTerrainPlugin {
         let normals = TerrainNormals::build(&terrain);
         app.insert_resource(terrain)
             .insert_resource(normals)
-            .insert_resource(DebugCounters::default())
-            .add_systems(Update, (debug_system_update, check_textures_and_generate_terrain, debug_terrain_entities, immediate_entity_verification));
+            .add_systems(Startup, spawn_terrain_mesh);
     }
-}
-
-
-#[derive(Resource, Default)]
-pub struct DebugCounters {
-    debug_counter: u32,
-    entity_debug_counter: u32,
-    verify_counter: u32,
 }
 
 /// Vertices per side of the terrain mesh and the baked height grid (they share one lattice).
@@ -155,207 +146,72 @@ impl StaticTerrainHeights {
         }
         origin
     }
-
-    /// Get detailed terrain information including passability
-    pub fn get_terrain_info(&self, x: f32, z: f32) -> TerrainInfo {
-        let height = self.get_height(x, z);
-        TerrainInfo {
-            is_passable: height <= ROCKY_TERRAIN_HEIGHT_THRESHOLD,
-        }
-    }
 }
 
 
-#[derive(Component)]
-pub struct TerrainChunk;
-
-/// Terrain information for a given position
-#[derive(Debug, Clone)]
-pub struct TerrainInfo {
-    pub is_passable: bool,
-}
-
-
-
-
+/// Spawns the heightfield terrain mesh with its triplanar material.
 #[instrument(skip_all)]
-fn debug_system_update(mut debug_counters: ResMut<DebugCounters>) {
-    debug_counters.debug_counter += 1;
-}
-
-/// Check if textures are loaded and generate terrain with proper sampler configuration
-#[instrument(skip_all)]
-pub fn check_textures_and_generate_terrain(
-    commands: Commands,
-    meshes: ResMut<Assets<Mesh>>,
-    simple_materials: ResMut<Assets<SimpleMaterial>>,
-    terrain_heights: Res<StaticTerrainHeights>,
-    asset_server: Res<AssetServer>,
-    mut terrain_generated: Local<bool>,
-) {
-    // Only run once
-    if *terrain_generated {
-        return;
-    }
-    
-    // Generate terrain immediately with texture
-    
-    // Generate terrain with texture material
-    generate_static_terrain_with_simple(
-        commands,
-        meshes,
-        simple_materials,
-        terrain_heights,
-        asset_server,
-    );
-    
-    *terrain_generated = true;
-}
-
-/// Generate 3D heightfield terrain with simple texture material
-#[instrument(skip_all)]
-fn generate_static_terrain_with_simple(
+fn spawn_terrain_mesh(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut simple_materials: ResMut<Assets<SimpleMaterial>>,
     terrain_heights: Res<StaticTerrainHeights>,
     asset_server: Res<AssetServer>,
 ) {
-    use crate::core::constants::movement::TERRAIN_SIZE;
-    let terrain_diameter = TERRAIN_SIZE * 2.0;
-    
-    
-    // Generate heightfield mesh with actual 3D geometry
-    let mesh = generate_heightfield_mesh(terrain_diameter, &terrain_heights);
-    let mesh_handle = meshes.add(mesh);
-    
-    // Simple working material with reliable textures and configurable lighting
-    let terrain_material = SimpleMaterial {
+    let mesh = generate_heightfield_mesh(TERRAIN_SIZE * 2.0, &terrain_heights);
+    let material = SimpleMaterial {
         grass_texture: asset_server.load("textures/rocky_terrain.jpg"),
         dirt_texture: asset_server.load("textures/rocky_terrain_02.jpg"),
         light_direction: Vec3::new(0.5, -1.0, 0.3), // Sun angle: slightly angled from above
     };
-    
-    let simple_material_handle = simple_materials.add(terrain_material);
-    
-    // Spawn terrain entity with enhanced triplanar material
-    
-    
-    // ONLY USE TRIPLANAR MATERIAL - no fallback
-    commands
-        .spawn((
-            Mesh3d(mesh_handle.clone()),
-            MeshMaterial3d(simple_material_handle.clone()),
-            Transform::from_translation(Vec3::ZERO), // At ground level
-            Visibility::Visible,
-            InheritedVisibility::VISIBLE,
-            ViewVisibility::HIDDEN,
-            TerrainChunk,
-            Name::new("ONLY Triplanar Terrain"),
-        ));
-        
-    // IMMEDIATE POST-SPAWN VERIFICATION (entities will be available next frame)
+    commands.spawn((
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(simple_materials.add(material)),
+        Transform::default(),
+        Name::new("Terrain"),
+    ));
 }
 
-
-/// Generate a 3D heightfield mesh based on noise terrain with biome-based vertex colors
+/// Heightfield mesh on the shared height-grid lattice. Vertex colours mark passability
+/// (green passable, red blocked) for the triplanar shader.
 #[instrument(skip_all)]
 fn generate_heightfield_mesh(terrain_size: f32, terrain_heights: &StaticTerrainHeights) -> Mesh {
-    use bevy::render::mesh::PrimitiveTopology;
+    use bevy::render::mesh::{Indices, PrimitiveTopology};
     use bevy::render::render_asset::RenderAssetUsages;
-    
+    const TEXTURE_SCALE: f32 = 0.01; // UV units per world unit
+
     let resolution = HEIGHT_GRID_RESOLUTION;
     let step = terrain_size / (resolution - 1) as f32;
-    let half_size = terrain_size * 0.5;
-    
-    
-    let mut positions = Vec::new();
-    let mut normals = Vec::new();
-    let mut uvs = Vec::new();
-    let mut colors = Vec::new();
-    let mut indices = Vec::new();
-    
-    // Track height range and passability for debugging
-    let mut min_height = f32::MAX;
-    let mut max_height = f32::MIN;
-    let mut _passable_vertices = 0;
-    let mut _blocked_vertices = 0;
-    
-    // Generate vertices with height variation and biome-based coloring
-    for z_index in 0..resolution {
-        for x_index in 0..resolution {
-            let x = x_index as f32 * step - half_size;
-            let z = z_index as f32 * step - half_size;
-            let height = terrain_heights.get_height(x, z);
-            
-            // Track height range
-            min_height = min_height.min(height);
-            max_height = max_height.max(height);
-            
-            
-            // Position
-            positions.push([x, height, z]);
-            
-            // UV coordinates - use world space coordinates with proper scaling
-            let texture_scale = 0.01; // 1 world unit = 0.01 texture units
-            uvs.push([
-                x * texture_scale,
-                z * texture_scale,
-            ]);
-            
-            // Calculate normal using neighboring heights
-            let normal = calculate_terrain_normal(x, z, step, terrain_heights);
-            normals.push(normal);
-            
-            // Color vertices based on terrain passability for visual debugging
-            let terrain_info = terrain_heights.get_terrain_info(x, z);
-            let color = if terrain_info.is_passable {
-                _passable_vertices += 1;
-                // Green for passable terrain
-                [0.2, 1.0, 0.2, 1.0]
-            } else {
-                _blocked_vertices += 1;
-                // Red for blocked terrain
-                [1.0, 0.2, 0.2, 1.0]
-            };
-            colors.push(color);
-        }
-    }
-    
-    // Generate triangle indices (two triangles per quad)
-    for z in 0..(resolution - 1) {
-        for x in 0..(resolution - 1) {
-            let bottom_left = z * resolution + x;
-            let bottom_right = bottom_left + 1;
-            let top_left = bottom_left + resolution;
-            let top_right = top_left + 1;
-            
-            // First triangle
-            indices.push(bottom_left as u32);
-            indices.push(top_left as u32);
-            indices.push(bottom_right as u32);
-            
-            // Second triangle  
-            indices.push(bottom_right as u32);
-            indices.push(top_left as u32);
-            indices.push(top_right as u32);
-        }
-    }
-    
-    
-    
-    // Create mesh with enhanced attributes
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
+    let points: Vec<(f32, f32)> = (0..resolution * resolution)
+        .map(|i| ((i % resolution) as f32 * step - terrain_size * 0.5, (i / resolution) as f32 * step - terrain_size * 0.5))
+        .collect();
+    let positions: Vec<[f32; 3]> = points.iter().map(|&(x, z)| [x, terrain_heights.get_height(x, z), z]).collect();
+    let normals: Vec<[f32; 3]> = points.iter().map(|&(x, z)| calculate_terrain_normal(x, z, step, terrain_heights)).collect();
+    let uvs: Vec<[f32; 2]> = points.iter().map(|&(x, z)| [x * TEXTURE_SCALE, z * TEXTURE_SCALE]).collect();
+    let colors: Vec<[f32; 4]> = points
+        .iter()
+        .map(|&(x, z)| if terrain_heights.is_passable(x, z) { [0.2, 1.0, 0.2, 1.0] } else { [1.0, 0.2, 0.2, 1.0] })
+        .collect();
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors); // Add vertex colors for biome variation
-    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
-    
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(grid_triangle_indices(resolution as u32)));
     mesh
+}
+
+/// Two triangles per grid quad, split along the bottom-right → top-left diagonal
+/// (`StaticTerrainHeights::get_height` interpolates the same triangles).
+fn grid_triangle_indices(resolution: u32) -> Vec<u32> {
+    (0..resolution - 1)
+        .flat_map(|z| (0..resolution - 1).map(move |x| z * resolution + x))
+        .flat_map(|bottom_left| {
+            let (bottom_right, top_left) = (bottom_left + 1, bottom_left + resolution);
+            [bottom_left, top_left, bottom_right, bottom_right, top_left, top_left + 1]
+        })
+        .collect()
 }
 
 /// Calculate smooth terrain normal using neighboring heights
@@ -429,60 +285,3 @@ fn sample_terrain_height(noise: &Perlin, x: f32, z: f32) -> f32 {
     // Ensure minimum height for gameplay (don't go too far below sea level)
     final_height.max(-30.0)
 }
-
-/// Debug system to track terrain entities
-fn debug_terrain_entities(
-    terrain_query: Query<(Entity, &Transform, &Name), With<TerrainChunk>>,
-    mut debug_counters: ResMut<DebugCounters>,
-) {
-    debug_counters.entity_debug_counter += 1;
-    if debug_counters.entity_debug_counter.is_multiple_of(300) { // Every 5 seconds at 60fps
-        let terrain_count = terrain_query.iter().count();
-        if terrain_count == 0 {
-        }
-    }
-}
-
-type TerrainVerifyQuery<'w, 's> = Query<
-    'w,
-    's,
-    (Entity, &'static Transform, &'static Name, &'static Mesh3d, &'static MeshMaterial3d<SimpleMaterial>),
-    With<TerrainChunk>,
->;
-
-/// Immediate verification system that runs right after terrain generation
-fn immediate_entity_verification(
-    terrain_query: TerrainVerifyQuery,
-    all_entities_query: Query<(Entity, Option<&Name>)>,
-    mut verified: Local<bool>,
-    mut debug_counters: ResMut<DebugCounters>,
-) {
-    // Only run once after terrain generation
-    if *verified {
-        return;
-    }
-    
-    debug_counters.verify_counter += 1;
-    if debug_counters.verify_counter.is_multiple_of(120) { // Every 2 seconds
-        // Check all entities in world
-        let _total_entities = all_entities_query.iter().count();
-        
-        // Check specifically for terrain entities
-        let terrain_count = terrain_query.iter().count();
-        if terrain_count > 0 {
-            *verified = true; // Stop verifying once we find entities
-        } else {
-            // Still checking for terrain entities...
-            
-            // Look for any entities with terrain-related names
-            for (_entity, name_opt) in all_entities_query.iter() {
-                if let Some(name) = name_opt {
-                    let name_str = name.to_string();
-                    if name_str.contains("Terrain") {
-                    }
-                }
-            }
-        }
-    }
-}
-

@@ -4,6 +4,7 @@
 //! Preview mesh snaps to terrain height and turns red on impassable hills.
 //! Left-click commits only on passable terrain; Escape/right-click cancels.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::BuildingType;
 use crate::core::resources::Stockpiles;
@@ -143,15 +144,21 @@ fn handle_placement_cancel(
     }
 }
 
+/// What committing a placement needs: the player's stockpile to pay, terrain to place on, and a spawner.
+#[derive(SystemParam)]
+pub(crate) struct BuildingConstruction<'w, 's> {
+    commands: Commands<'w, 's>,
+    asset_server: Res<'w, AssetServer>,
+    stockpiles: ResMut<'w, Stockpiles>,
+    terrain: Res<'w, StaticTerrainHeights>,
+}
+
 /// Left-click commits placement on passable terrain, deducting the cost.
 fn handle_placement_commit(
     mouse: Res<ButtonInput<MouseButton>>,
     cursor: Res<CursorState>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut placement: ResMut<BuildingPlacement>,
-    mut stockpiles: ResMut<Stockpiles>,
-    terrain: Res<StaticTerrainHeights>,
+    mut construction: BuildingConstruction,
 ) {
     // Skip the same frame placement mode was activated (prevents double-fire from UI button click).
     if placement.skip_first_click {
@@ -161,17 +168,22 @@ fn handle_placement_commit(
 
     let PlacementMode::Placing(ref building_type) = placement.mode.clone() else { return };
 
-    if mouse.just_pressed(MouseButton::Left) {
-        let pos = cursor.world_position;
-        if !terrain.is_passable(pos.x, pos.z) { return; }
-        let cost = building_type.build_cost_nectar();
-        let stockpile = stockpiles.get_or_insert_mut(1);
-        if stockpile.nectar < cost { return; }
-        stockpile.nectar -= cost;
-        let y = terrain.get_height(pos.x, pos.z);
-        EntityFactory::spawn_building(&mut commands, &asset_server, building_type.clone(), Vec3::new(pos.x, y, pos.z), 1);
-        cancel_placement(&mut commands, &mut placement);
+    if !mouse.just_pressed(MouseButton::Left) {
+        return;
     }
+    let pos = cursor.world_position;
+    if !construction.terrain.is_passable(pos.x, pos.z) {
+        return;
+    }
+    let cost = building_type.build_cost_nectar();
+    let stockpile = construction.stockpiles.get_or_insert_mut(1);
+    if stockpile.nectar < cost {
+        return;
+    }
+    stockpile.nectar -= cost;
+    let site = Vec3::new(pos.x, construction.terrain.get_height(pos.x, pos.z), pos.z);
+    EntityFactory::spawn_building(&mut construction.commands, &construction.asset_server, building_type.clone(), site, 1);
+    cancel_placement(&mut construction.commands, &mut placement);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

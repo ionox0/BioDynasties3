@@ -1,4 +1,5 @@
 use crate::core::components::*;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 /// Marker for the green sphere shown while a gatherer is returning to base.
@@ -6,6 +7,14 @@ use bevy::prelude::*;
 #[derive(Component)]
 struct CargoIndicator {
     target: Entity,
+}
+
+type LivingGatherer = (With<ResourceGatherer>, Without<Dying>);
+
+/// Living gatherers and their current activity.
+#[derive(SystemParam)]
+struct LivingGatherers<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static UnitState), LivingGatherer>,
 }
 
 pub struct CargoIndicatorPlugin;
@@ -18,12 +27,12 @@ impl Plugin for CargoIndicatorPlugin {
 
 fn spawn_cargo_indicators(
     mut commands: Commands,
-    returners: Query<(Entity, &UnitState), (With<ResourceGatherer>, Without<Dying>)>,
+    returners: LivingGatherers,
     existing: Query<&CargoIndicator>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (entity, state) in returners.iter() {
+    for (entity, state) in returners.query.iter() {
         if *state != UnitState::ReturningToBase {
             continue;
         }

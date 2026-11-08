@@ -1,4 +1,5 @@
 use crate::core::components::*;
+use crate::world::static_terrain::StaticTerrainHeights;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
@@ -7,9 +8,42 @@ pub(crate) struct PlayerSelectables<'w, 's> {
     query: Query<'w, 's, (Entity, &'static Selectable, &'static Transform, &'static RTSUnit)>,
 }
 
+/// Units whose selection state changed this frame.
+type SelectionChanged = (With<RTSUnit>, Changed<Selectable>);
+
 #[derive(SystemParam)]
 pub(crate) struct ChangedSelectables<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Selectable, &'static Transform), (With<RTSUnit>, Changed<Selectable>)>,
+    query: Query<'w, 's, (Entity, &'static Selectable, &'static Transform), SelectionChanged>,
+}
+
+/// Mouse, keyboard, window and camera state shared by the selection input systems.
+#[derive(SystemParam)]
+pub(crate) struct SelectionInput<'w, 's> {
+    mouse: Res<'w, ButtonInput<MouseButton>>,
+    keyboard: Res<'w, ButtonInput<KeyCode>>,
+    windows: Query<'w, 's, &'static Window>,
+    cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform)>,
+}
+
+impl SelectionInput<'_, '_> {
+    fn is_shift_held(&self) -> bool {
+        self.keyboard.pressed(KeyCode::ShiftLeft) || self.keyboard.pressed(KeyCode::ShiftRight)
+    }
+}
+
+/// Selection change requests, applied by `apply_selection_changes`.
+#[derive(SystemParam)]
+pub(crate) struct SelectionEvents<'w> {
+    changed: EventWriter<'w, SelectionChangedEvent>,
+    cleared: EventWriter<'w, SelectionClearedEvent>,
+}
+
+/// Assets and terrain lookups used to draw selection rings.
+#[derive(SystemParam)]
+pub(crate) struct IndicatorAssets<'w> {
+    meshes: ResMut<'w, Assets<Mesh>>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
+    terrain: Res<'w, StaticTerrainHeights>,
 }
 
 #[derive(SystemParam)]
@@ -64,56 +98,30 @@ fn is_click_in_game_area(cursor_position: Vec2, window: &Window) -> bool {
 /// System for raycast-based single-click selection.
 /// Fires SelectionChangedEvent / SelectionClearedEvent instead of mutating Selectable directly.
 pub fn click_selection_system(
-    mouse_button: Res<ButtonInput<MouseButton>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    windows: Query<&Window>,
-    camera_q: Query<(&Camera, &GlobalTransform)>,
+    input: SelectionInput,
     selectables: PlayerSelectables,
-    mut changed_events: EventWriter<SelectionChangedEvent>,
-    mut cleared_events: EventWriter<SelectionClearedEvent>,
+    mut events: SelectionEvents,
 ) {
-    if !mouse_button.just_released(MouseButton::Left) {
+    if !input.mouse.just_released(MouseButton::Left) {
         return;
     }
-
-    let window = windows.single();
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
+    let window = input.windows.single();
+    let Some(cursor_position) = window.cursor_position() else { return };
     if !is_click_in_game_area(cursor_position, window) {
         return;
     }
+    let Ok((camera, camera_transform)) = input.cameras.get_single() else { return };
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else { return };
 
-    let Ok((camera, camera_transform)) = camera_q.get_single() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
-        return;
-    };
-
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-    let closest_entity = find_closest_entity_to_ray(&selectables.query, ray);
-
-    if let Some(selected_entity) = closest_entity {
-        if !shift_held {
-            cleared_events.send(SelectionClearedEvent);
-        }
-        let is_selected = if shift_held {
-            // Toggle: read current state
-            selectables.query
-                .get(selected_entity)
-                .map(|(_, s, _, _)| !s.is_selected)
-                .unwrap_or(true)
-        } else {
-            true
-        };
-        changed_events.send(SelectionChangedEvent {
-            entity: selected_entity,
-            is_selected,
-        });
-    } else if !shift_held {
-        cleared_events.send(SelectionClearedEvent);
+    let shift_held = input.is_shift_held();
+    if !shift_held {
+        events.cleared.send(SelectionClearedEvent);
     }
+    let Some(selected_entity) = find_closest_entity_to_ray(&selectables.query, ray) else { return };
+    // Shift toggles the clicked unit; a plain click selects it.
+    let is_selected = !shift_held
+        || selectables.query.get(selected_entity).map_or(true, |(_, s, _, _)| !s.is_selected);
+    events.changed.send(SelectionChangedEvent { entity: selected_entity, is_selected });
 }
 
 fn find_closest_entity_to_ray(
@@ -159,60 +167,32 @@ fn scaled_selection_radius(base_radius: f32, camera_distance: f32) -> f32 {
     (base_radius * scale).max(10.0)
 }
 
-/// Grouped mutable system params for drag selection to reduce argument count.
+/// Drag-box state and the on-screen box it draws.
 #[derive(SystemParam)]
 pub(crate) struct DragSelectionMut<'w, 's> {
     commands: Commands<'w, 's>,
     drag_query: Query<'w, 's, &'static mut DragSelection>,
     box_query: Query<'w, 's, Entity, With<SelectionBox>>,
-    changed_events: EventWriter<'w, SelectionChangedEvent>,
-    cleared_events: EventWriter<'w, SelectionClearedEvent>,
 }
 
 pub fn drag_selection_system(
-    mouse_button: Res<ButtonInput<MouseButton>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    windows: Query<&Window>,
-    camera_q: Query<(&Camera, &GlobalTransform)>,
+    input: SelectionInput,
     selectables: PlayerSelectables,
     mut state: DragSelectionMut,
+    mut events: SelectionEvents,
 ) {
-    let window = windows.single();
-    let Ok((camera, camera_transform)) = camera_q.get_single() else {
-        return;
-    };
+    let window = input.windows.single();
+    let Ok(view) = input.cameras.get_single() else { return };
+    let Some(cursor_position) = window.cursor_position() else { return };
 
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-
-    if mouse_button.just_pressed(MouseButton::Left)
-        && is_click_in_game_area(cursor_position, window)
-    {
+    if input.mouse.just_pressed(MouseButton::Left) && is_click_in_game_area(cursor_position, window) {
         start_drag_selection(&mut state.drag_query, cursor_position, &mut state.commands);
     }
-
-    if mouse_button.pressed(MouseButton::Left) {
-        update_drag_selection(
-            &mut state.drag_query,
-            cursor_position,
-            &state.box_query,
-            &mut state.commands,
-        );
+    if input.mouse.pressed(MouseButton::Left) {
+        update_drag_selection(&mut state.drag_query, cursor_position, &state.box_query, &mut state.commands);
     }
-
-    if mouse_button.just_released(MouseButton::Left) {
-        finalize_selection(
-            &mut state.drag_query,
-            &selectables.query,
-            &keyboard,
-            &state.box_query,
-            &mut state.commands,
-            camera,
-            camera_transform,
-            &mut state.changed_events,
-            &mut state.cleared_events,
-        );
+    if input.mouse.just_released(MouseButton::Left) {
+        finalize_selection(&mut state, &selectables, input.is_shift_held(), view, &mut events);
     }
 }
 
@@ -318,75 +298,47 @@ fn create_visual_selection_box(bounds: &SelectionBounds, commands: &mut Commands
     ));
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Ends a drag: selects every player unit inside a significant box, then removes the box.
 fn finalize_selection(
-    drag_selection_query: &mut Query<&mut DragSelection>,
-    selectables: &Query<(Entity, &Selectable, &Transform, &RTSUnit)>,
-    keyboard: &Res<ButtonInput<KeyCode>>,
-    selection_box_query: &Query<Entity, With<SelectionBox>>,
-    commands: &mut Commands,
-    camera: &Camera,
-    camera_transform: &GlobalTransform,
-    changed_events: &mut EventWriter<SelectionChangedEvent>,
-    cleared_events: &mut EventWriter<SelectionClearedEvent>,
+    state: &mut DragSelectionMut,
+    selectables: &PlayerSelectables,
+    shift_held: bool,
+    view: (&Camera, &GlobalTransform),
+    events: &mut SelectionEvents,
 ) {
-    let Ok(mut drag_selection) = drag_selection_query.get_single_mut() else {
-        return;
-    };
+    let Ok(mut drag_selection) = state.drag_query.get_single_mut() else { return };
     if !drag_selection.is_active {
         return;
     }
-
-    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
     let bounds = calculate_selection_bounds(&drag_selection);
-    let is_drag = is_significant_drag(&bounds);
-
-    if is_drag {
+    if is_significant_drag(&bounds) {
         if !shift_held {
-            cleared_events.send(SelectionClearedEvent);
+            events.cleared.send(SelectionClearedEvent);
         }
-        fire_box_selection_events(
-            &bounds,
-            selectables,
-            shift_held,
-            camera,
-            camera_transform,
-            changed_events,
-        );
+        fire_box_selection_events(&bounds, &selectables.query, shift_held, view, &mut events.changed);
     }
-
     drag_selection.is_active = false;
-    cleanup_old_selection_box(selection_box_query, commands);
+    cleanup_old_selection_box(&state.box_query, &mut state.commands);
 }
 
 fn fire_box_selection_events(
     bounds: &SelectionBounds,
     selectables: &Query<(Entity, &Selectable, &Transform, &RTSUnit)>,
     shift_held: bool,
-    camera: &Camera,
-    camera_transform: &GlobalTransform,
+    (camera, camera_transform): (&Camera, &GlobalTransform),
     changed_events: &mut EventWriter<SelectionChangedEvent>,
 ) {
     for (entity, selectable, transform, unit) in selectables.iter() {
         if unit.player_id != 1 {
             continue;
         }
-
-        let Ok(screen_pos) = camera.world_to_viewport(camera_transform, transform.translation)
-        else {
+        let Ok(screen_pos) = camera.world_to_viewport(camera_transform, transform.translation) else {
             continue;
         };
-
-        if screen_pos.x >= bounds.min_x
-            && screen_pos.x <= bounds.max_x
-            && screen_pos.y >= bounds.min_y
-            && screen_pos.y <= bounds.max_y
-        {
-            let is_selected = if shift_held {
-                !selectable.is_selected
-            } else {
-                true
-            };
+        let is_inside = (bounds.min_x..=bounds.max_x).contains(&screen_pos.x)
+            && (bounds.min_y..=bounds.max_y).contains(&screen_pos.y);
+        if is_inside {
+            let is_selected = !shift_held || !selectable.is_selected;
             changed_events.send(SelectionChangedEvent { entity, is_selected });
         }
     }
@@ -416,14 +368,12 @@ fn spawn_selection_indicator(
     transform: &Transform,
     selectable: &Selectable,
     commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    terrain_heights: &crate::world::static_terrain::StaticTerrainHeights,
+    assets: &mut IndicatorAssets,
 ) {
     let ring_radius = selectable.selection_radius;
     let ring_mesh = create_hollow_ring_mesh(ring_radius, 32);
 
-    let terrain_height = terrain_heights.get_height(transform.translation.x, transform.translation.z);
+    let terrain_height = assets.terrain.get_height(transform.translation.x, transform.translation.z);
     let unit_height = transform.translation.y;
     let relative_y_offset = (terrain_height + 0.5) - unit_height;
 
@@ -432,8 +382,8 @@ fn spawn_selection_indicator(
 
     let indicator_entity = commands
         .spawn((
-            Mesh3d(meshes.add(ring_mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
+            Mesh3d(assets.meshes.add(ring_mesh)),
+            MeshMaterial3d(assets.materials.add(StandardMaterial {
                 base_color: Color::srgb(0.3, 0.6, 1.0),
                 emissive: Color::srgb(0.2, 0.4, 0.8).into(),
                 unlit: true,
@@ -502,23 +452,12 @@ pub fn create_selection_indicators(
     mut commands: Commands,
     selectables: ChangedSelectables,
     existing_indicators: Query<&SelectionIndicator>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    terrain_heights: Res<crate::world::static_terrain::StaticTerrainHeights>,
+    mut assets: IndicatorAssets,
 ) {
     for (entity, selectable, transform) in selectables.query.iter() {
         let has_indicator = existing_indicators.iter().any(|ind| ind.target == entity);
-
         if selectable.is_selected && !has_indicator {
-            spawn_selection_indicator(
-                entity,
-                transform,
-                selectable,
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &terrain_heights,
-            );
+            spawn_selection_indicator(entity, transform, selectable, &mut commands, &mut assets);
         }
     }
 }

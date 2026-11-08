@@ -2,7 +2,6 @@
 
 pub mod action_panel;
 pub mod ai_goals_debug;
-pub mod health_ui;
 pub mod icons;
 pub mod placement;
 pub mod resource_display;
@@ -11,7 +10,6 @@ pub mod tooltip;
 use bevy::prelude::*;
 use action_panel::ActionPanelPlugin;
 use ai_goals_debug::AIGoalsDebugPlugin;
-use health_ui::HealthUIPlugin;
 use placement::PlacementPlugin;
 use resource_display::ResourceDisplayPlugin;
 use tooltip::{
@@ -27,7 +25,6 @@ impl Plugin for UIPlugin {
             .init_resource::<HoveredResource>()
             .init_resource::<icons::UIIcons>()
             .add_plugins((
-                // HealthUIPlugin,
                 ResourceDisplayPlugin,
                 ActionPanelPlugin,
                 PlacementPlugin,

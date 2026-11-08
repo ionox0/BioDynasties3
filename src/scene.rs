@@ -1,3 +1,4 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::constants::{camera, movement};
@@ -225,14 +226,20 @@ fn setup_scene(mut commands: Commands) {
     });
 }
 
+/// The player's RTS camera.
+#[derive(SystemParam)]
+pub(crate) struct MainCameras<'w, 's> {
+    query: Query<'w, 's, (&'static mut Transform, &'static RTSCamera), With<MainCamera>>,
+}
+
 pub fn handle_rts_camera_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mouse_wheel: EventReader<bevy::input::mouse::MouseWheel>,
-    mut camera_query: Query<(&mut Transform, &RTSCamera), With<MainCamera>>,
+    mut camera_query: MainCameras,
     terrain_heights: Res<StaticTerrainHeights>,
     time: Res<Time>,
 ) {
-    let Ok((mut transform, rts_camera)) = camera_query.get_single_mut() else {
+    let Ok((mut transform, rts_camera)) = camera_query.query.get_single_mut() else {
         return;
     };
 

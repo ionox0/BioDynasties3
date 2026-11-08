@@ -4,6 +4,7 @@
 //! to help with unit placement, distance measurement, and map navigation.
 
 use crate::core::constants::{grid::*, hotkeys::TOGGLE_GRID};
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 /// Resource to track grid visibility state
@@ -242,10 +243,16 @@ fn create_thick_line_mesh(start: Vec3, end: Vec3, width: f32) -> Mesh {
     mesh
 }
 
+/// Debug grid line entities.
+#[derive(SystemParam)]
+struct GridLines<'w, 's> {
+    query: Query<'w, 's, &'static mut Visibility, With<GridLine>>,
+}
+
 /// Update visibility of all grid lines based on settings
 fn update_grid_visibility(
     grid_settings: Res<GridSettings>,
-    mut grid_query: Query<&mut Visibility, With<GridLine>>,
+    mut grid_query: GridLines,
 ) {
     if grid_settings.is_changed() {
         let visibility = if grid_settings.visible {
@@ -254,7 +261,7 @@ fn update_grid_visibility(
             Visibility::Hidden
         };
 
-        for mut grid_visibility in grid_query.iter_mut() {
+        for mut grid_visibility in grid_query.query.iter_mut() {
             *grid_visibility = visibility;
         }
     }

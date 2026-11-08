@@ -112,12 +112,18 @@ pub fn unit_hover_detection_system(
     }
 }
 
+/// Resource nodes the cursor can hover.
+#[derive(SystemParam)]
+pub(crate) struct HoverableResources<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Transform, &'static CollisionRadius), With<ResourceSource>>,
+}
+
 /// System to detect which resource source is under the cursor
 pub fn resource_hover_detection_system(
     mut hovered_resource: ResMut<HoveredResource>,
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    resources: Query<(Entity, &Transform, &CollisionRadius), With<ResourceSource>>,
+    resources: HoverableResources,
 ) {
     let Ok(window) = windows.get_single() else { return; };
     let Ok((camera, camera_transform)) = camera_q.get_single() else { return; };
@@ -134,7 +140,7 @@ pub fn resource_hover_detection_system(
     let mut closest_distance = f32::INFINITY;
     let mut closest_entity = None;
 
-    for (entity, transform, collision) in resources.iter() {
+    for (entity, transform, collision) in resources.query.iter() {
         let to_entity = transform.translation - ray.origin;
         let projected_distance = to_entity.dot(*ray.direction);
         if projected_distance <= 0.0 {

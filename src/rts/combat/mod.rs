@@ -49,24 +49,32 @@ use self::events::{CombatStopEvent, CombatTargetEvent, DamageEvent, DeathEvent};
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub(crate) struct CombatSet;
 
+/// Units that can still be hit: they have health and aren't dying.
+type Alive = (With<RTSHealth>, Without<Dying>);
+type CombatantData = (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, Option<&'static UnitState>);
+type AttackerData = (Entity, &'static mut Combat, &'static Transform, &'static CollisionRadius, Option<&'static Movement>);
+/// Fighting units that retaliate when hit (gatherers flee instead).
+type Military = (With<Combat>, Without<ResourceGatherer>, Without<Dying>);
+type CombatStateData = (Entity, &'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>, &'static mut UnitState);
+
 #[derive(SystemParam)]
 pub(crate) struct AliveUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Transform, &'static RTSUnit), (With<RTSHealth>, Without<Dying>)>,
+    query: Query<'w, 's, (Entity, &'static Transform, &'static RTSUnit), Alive>,
 }
 
 #[derive(SystemParam)]
 pub(crate) struct CombatTargets<'w, 's> {
-    query: Query<'w, 's, (&'static Transform, &'static CollisionRadius), (With<RTSHealth>, Without<Dying>)>,
+    query: Query<'w, 's, (&'static Transform, &'static CollisionRadius), Alive>,
 }
 
 #[derive(SystemParam)]
 pub(crate) struct CombatUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, Option<&'static UnitState>)>,
+    query: Query<'w, 's, CombatantData>,
 }
 
 #[derive(SystemParam)]
 pub(crate) struct AttackingUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut Combat, &'static Transform, &'static RTSUnit, &'static CollisionRadius, Option<&'static Movement>)>,
+    query: Query<'w, 's, AttackerData, With<RTSUnit>>,
 }
 
 #[derive(SystemParam)]
@@ -76,12 +84,32 @@ pub(crate) struct HealthyUnits<'w, 's> {
 
 #[derive(SystemParam)]
 pub(crate) struct CombatStateUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>, &'static mut UnitState), Without<Dying>>,
+    query: Query<'w, 's, CombatStateData, Without<Dying>>,
 }
 
 #[derive(SystemParam)]
 pub(crate) struct AliveUnitTransforms<'w, 's> {
-    query: Query<'w, 's, &'static Transform, (With<RTSHealth>, Without<Dying>)>,
+    query: Query<'w, 's, &'static Transform, Alive>,
+}
+
+/// Military units (no `ResourceGatherer`) that fight back when hit.
+#[derive(SystemParam)]
+pub(crate) struct MilitaryUnits<'w, 's> {
+    query: Query<'w, 's, Entity, Military>,
+}
+
+/// Units that just gained a `Combat` component.
+#[derive(SystemParam)]
+pub(crate) struct NewFighters<'w, 's> {
+    query: Query<'w, 's, (Entity, &'static Combat), Added<Combat>>,
+}
+
+/// Events the attack loop sends to other systems.
+#[derive(SystemParam)]
+pub(crate) struct CombatOrders<'w> {
+    damage: EventWriter<'w, DamageEvent>,
+    moves: EventWriter<'w, MovementTargetEvent>,
+    stops: EventWriter<'w, StopMovementEvent>,
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -244,13 +272,11 @@ fn target_management_system(
 fn combat_execution_system(
     mut attackers: AttackingUnits,
     targets: CombatTargets,
-    mut damage_events: EventWriter<DamageEvent>,
-    mut move_events: EventWriter<MovementTargetEvent>,
-    mut stop_events: EventWriter<StopMovementEvent>,
+    mut orders: CombatOrders,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (attacker, mut combat, atf, _unit, acol, movement) in attackers.query.iter_mut() {
+    for (attacker, mut combat, atf, acol, movement) in attackers.query.iter_mut() {
         let Some(target) = combat.target else {
             combat.is_attacking = false;
             continue;
@@ -260,32 +286,34 @@ fn combat_execution_system(
             combat.is_attacking = false;
             continue;
         };
-
         let edge_dist = atf.translation.distance(ttf.translation) - acol.radius - tcol.radius;
-
         if edge_dist > combat.attack_range * cc::ATTACK_RANGE_MARGIN {
             let dir = (ttf.translation - atf.translation).normalize();
             let dest = ttf.translation - dir * (combat.attack_range * cc::TARGET_POSITION_RATIO);
-            let needs_move = movement.map_or(true, |m| m.target_position.is_none());
-            if needs_move {
-                move_events.send(MovementTargetEvent::new(attacker, dest));
+            if movement.is_none_or(|m| m.target_position.is_none()) {
+                orders.moves.send(MovementTargetEvent::new(attacker, dest));
             }
             combat.is_attacking = false;
-        } else {
-            // In effective range: stop and attack.
-            stop_events.send(StopMovementEvent { entity: attacker });
-            if now - combat.last_attack_time >= combat.attack_cooldown {
-                combat.last_attack_time = now;
-                combat.is_attacking = true;
-                damage_events.send(DamageEvent {
-                    attacker,
-                    target,
-                    damage: combat.attack_damage,
-                    damage_type: damage_type_for(&combat.attack_type),
-                });
-            }
+            continue;
         }
+        orders.stops.send(StopMovementEvent { entity: attacker });
+        strike_if_ready(&mut combat, attacker, target, now, &mut orders.damage);
     }
+}
+
+/// In range: lands a hit once the attack cooldown has elapsed.
+fn strike_if_ready(combat: &mut Combat, attacker: Entity, target: Entity, now: f32, damage: &mut EventWriter<DamageEvent>) {
+    if now - combat.last_attack_time < combat.attack_cooldown {
+        return;
+    }
+    combat.last_attack_time = now;
+    combat.is_attacking = true;
+    damage.send(DamageEvent {
+        attacker,
+        target,
+        damage: combat.attack_damage,
+        damage_type: damage_type_for(&combat.attack_type),
+    });
 }
 
 /// Applies `DamageEvent` to `RTSHealth`, then emits `DeathEvent` if health reaches zero.
@@ -372,20 +400,20 @@ fn apply_armor(base: f32, armor: f32, damage_type: &DamageType) -> f32 {
 /// When a military unit (no `ResourceGatherer`) takes damage, immediately retarget the attacker.
 fn retaliate_on_attack(
     mut damage_events: EventReader<DamageEvent>,
-    military: Query<Entity, (With<Combat>, Without<ResourceGatherer>, Without<Dying>)>,
+    military: MilitaryUnits,
     mut target_events: EventWriter<CombatTargetEvent>,
 ) {
     for ev in damage_events.read() {
-        if military.get(ev.target).is_err() { continue; }
+        if military.query.get(ev.target).is_err() { continue; }
         target_events.send(CombatTargetEvent { attacker: ev.target, target: ev.attacker, move_to_range: true });
     }
 }
 
 fn add_combat_state_to_fighters(
     mut commands: Commands,
-    new_fighters: Query<(Entity, &Combat), Added<Combat>>,
+    new_fighters: NewFighters,
 ) {
-    for (entity, combat) in new_fighters.iter() {
+    for (entity, combat) in new_fighters.query.iter() {
         if combat.auto_attack {
             commands.entity(entity).insert((CombatState::default(), UnitState::Idle));
         }

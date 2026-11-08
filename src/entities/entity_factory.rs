@@ -27,7 +27,7 @@ impl EntityFactory {
         let mut entity = commands.spawn((
             SceneRoot(asset_server.load(model_path)),
             Transform::from_translation(position).with_rotation(rotation).with_scale(Vec3::splat(scale)),
-            RTSUnit { player_id, unit_type: Some(unit_type.clone()) },
+            RTSUnit { player_id, unit_type: Some(unit_type) },
             Position { translation: position },
             Movement {
                 max_speed: stats.movement.max_speed,

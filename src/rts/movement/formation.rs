@@ -10,14 +10,6 @@ use super::formation_events::FormationMoveEvent;
 use super::pathfinding::grid::NavGrid;
 use super::pathfinding::systems::NavGridResource;
 
-/// Tags a unit as part of a formation, recording its slot offset.
-// Owned by: FormationPlugin (apply_formation_move)
-#[derive(Component, Debug, Clone)]
-pub struct Formation {
-    #[allow(dead_code)]
-    pub slot_offset: Vec3,
-}
-
 const SPACING: f32 = 35.0;
 /// How far (in nav cells) a slot may be nudged off blocked terrain.
 const SLOT_SNAP_RING: i32 = 8;
@@ -33,7 +25,6 @@ impl Plugin for FormationPlugin {
 
 /// Assigns each unit a slot in a square grid; the whole group shares one flow field to the centre.
 fn apply_formation_move(
-    mut commands: Commands,
     mut events: EventReader<FormationMoveEvent>,
     unit_q: Query<&RTSUnit>,
     mut move_events: EventWriter<MovementTargetEvent>,
@@ -46,7 +37,6 @@ fn apply_formation_move(
                 continue;
             }
             let offset = grid_offset(i, columns);
-            commands.entity(entity).insert(Formation { slot_offset: offset });
             let slot = grid.as_ref().map_or(ev.target + offset, |g| passable_slot(&g.0, ev.target + offset));
             move_events.send(MovementTargetEvent { entity, target_position: slot, group_goal: ev.target });
         }

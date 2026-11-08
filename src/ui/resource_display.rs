@@ -8,6 +8,7 @@
 //! supporting any number of AI players.
 
 use std::collections::HashSet;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::RTSUnit;
 use crate::core::resources::Stockpiles;
@@ -127,15 +128,21 @@ fn setup_ai_resource_panel(mut commands: Commands) {
 
 // ─── Dynamic AI panel management ─────────────────────────────────────────────
 
+/// The panel listing AI players' resources.
+#[derive(SystemParam)]
+struct AiResourcePanels<'w, 's> {
+    query: Query<'w, 's, Entity, With<AIResourceDisplayPanel>>,
+}
+
 /// Adds a row for each new AI player (stockpile key ≥ 2); removes rows for gone players.
 fn manage_ai_resource_panels(
     mut commands: Commands,
     stockpiles: Res<Stockpiles>,
-    container_q: Query<Entity, With<AIResourceDisplayPanel>>,
+    container_q: AiResourcePanels,
     existing_q: Query<(Entity, &AIPlayerPanel)>,
     mut known: Local<HashSet<u8>>,
 ) {
-    let Ok(container) = container_q.get_single() else { return };
+    let Ok(container) = container_q.query.get_single() else { return };
 
     for &player_id in stockpiles.0.keys().filter(|&&id| id >= 2) {
         if known.insert(player_id) {

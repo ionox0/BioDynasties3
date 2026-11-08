@@ -13,14 +13,17 @@ use crate::ui::placement::StartPlacementEvent;
 
 // ─── SystemParam query structs ────────────────────────────────────────────────
 
+/// Buttons whose interaction state changed this frame.
+type ButtonInteractionChanged = (Changed<Interaction>, With<Button>);
+
 #[derive(SystemParam)]
 pub(crate) struct BuildButtons<'w, 's> {
-    query: Query<'w, 's, (&'static Interaction, &'static BuildButton), (Changed<Interaction>, With<Button>)>,
+    query: Query<'w, 's, (&'static Interaction, &'static BuildButton), ButtonInteractionChanged>,
 }
 
 #[derive(SystemParam)]
 pub(crate) struct UnitButtons<'w, 's> {
-    query: Query<'w, 's, (&'static Interaction, &'static UnitProductionButton), (Changed<Interaction>, With<Button>)>,
+    query: Query<'w, 's, (&'static Interaction, &'static UnitProductionButton), ButtonInteractionChanged>,
 }
 
 #[derive(SystemParam)]
@@ -254,16 +257,22 @@ fn handle_unit_buttons(
 ) {
     for (interaction, btn) in btn_q.query.iter() {
         if *interaction == Interaction::Pressed {
-            queue_events.send(QueueProductionEvent { building: btn.building, unit_type: btn.unit_type.clone() });
+            queue_events.send(QueueProductionEvent { building: btn.building, unit_type: btn.unit_type });
         }
     }
 }
 
+/// Text showing the selected building's production queue.
+#[derive(SystemParam)]
+struct QueueDisplays<'w, 's> {
+    query: Query<'w, 's, &'static mut Text, With<QueueDisplay>>,
+}
+
 fn update_queue_display(
-    mut display_q: Query<&mut Text, With<QueueDisplay>>,
+    mut display_q: QueueDisplays,
     buildings: SelectedBuildingQueue,
 ) {
-    let Ok(mut text) = display_q.get_single_mut() else { return };
+    let Ok(mut text) = display_q.query.get_single_mut() else { return };
     let selected = buildings.query.iter().find(|(_, sel, _)| sel.is_selected);
     if let Some((_, _, queue)) = selected {
         *text = Text::new(format_queue(queue));

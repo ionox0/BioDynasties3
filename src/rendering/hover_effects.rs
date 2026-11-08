@@ -2,9 +2,12 @@ use crate::core::components::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
+/// Anything the player can hover: units, buildings and resources.
+type Hoverable = Or<(With<RTSUnit>, With<Building>, With<ResourceSource>)>;
+
 #[derive(SystemParam)]
 pub(crate) struct HoverableEntities<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), Or<(With<RTSUnit>, With<Building>, With<ResourceSource>)>>,
+    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), Hoverable>,
 }
 
 #[derive(SystemParam)]

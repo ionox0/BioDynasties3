@@ -1,3 +1,4 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::ai::goals::types::{GoalQueueSnapshot, UnifiedGoal};
 
@@ -45,14 +46,20 @@ fn setup_goals_debug_panel(mut commands: Commands) {
         });
 }
 
+/// The AI goals debug overlay text.
+#[derive(SystemParam)]
+struct GoalsDebugTexts<'w, 's> {
+    query: Query<'w, 's, &'static mut Text, With<GoalsDebugText>>,
+}
+
 fn update_goals_debug(
     snapshot: Res<GoalQueueSnapshot>,
-    mut text_q: Query<&mut Text, With<GoalsDebugText>>,
+    mut text_q: GoalsDebugTexts,
 ) {
     if !snapshot.is_changed() {
         return;
     }
-    let Ok(mut text) = text_q.get_single_mut() else {
+    let Ok(mut text) = text_q.query.get_single_mut() else {
         return;
     };
     if snapshot.goals.is_empty() {

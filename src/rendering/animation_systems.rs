@@ -5,9 +5,12 @@ use bevy::prelude::*;
 use bevy_animation::graph::AnimationNodeIndex;
 use bevy_animation::prelude::{AnimationGraph, AnimationGraphHandle};
 
+/// Units that haven't been given an animation controller yet.
+type Uncontrolled = (Without<UnitAnimationController>, With<RTSUnit>);
+
 #[derive(SystemParam)]
 pub(crate) struct UncontrolledUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static RTSUnit), (Without<UnitAnimationController>, With<RTSUnit>)>,
+    query: Query<'w, 's, (Entity, &'static RTSUnit), Uncontrolled>,
 }
 
 #[derive(SystemParam)]
@@ -65,8 +68,6 @@ pub enum AnimationState {
 pub struct AnimationStateChangeEvent {
     pub entity: Entity,
     pub new_state: AnimationState,
-    #[allow(dead_code)]
-    pub force: bool, // Force immediate transition without blending
 }
 
 /// Grouped read-only queries for animation state derivation.
@@ -86,8 +87,7 @@ pub fn animation_state_manager(
     for (entity, controller, movement, rts_unit) in units.iter() {
         let new_state = derive_animation_state(entity, movement, rts_unit, &state);
         if controller.current_state != new_state {
-            let force = matches!(new_state, AnimationState::Death);
-            events.send(AnimationStateChangeEvent { entity, new_state, force });
+            events.send(AnimationStateChangeEvent { entity, new_state });
         }
     }
 }
@@ -380,85 +380,62 @@ pub fn add_missing_animation_controllers(
     }
 }
 
-// System to set up animations for GLB models
-// In Bevy 0.15, GLB animations are loaded automatically, but AnimationPlayer might be on child entities
+/// Scene-hierarchy lookups used to find and drive a model's `AnimationPlayer`.
+#[derive(SystemParam)]
+pub(crate) struct SceneAnimationPlayers<'w, 's> {
+    players: Query<'w, 's, &'static mut AnimationPlayer>,
+    children: Query<'w, 's, &'static Children>,
+}
+
+/// Finds each loaded model's `AnimationPlayer` (often on a child entity), builds its clip graph,
+/// and starts the default clip.
 pub fn setup_glb_animations(
     mut glb_models: PendingGlbModels,
-    mut animation_players: Query<&mut AnimationPlayer>,
+    mut scene: SceneAnimationPlayers,
     mut animation_graphs: ResMut<Assets<AnimationGraph>>,
     mut commands: Commands,
-    children: Query<&Children>,
     asset_server: Res<AssetServer>,
 ) {
     for (entity, scene_root, mut controller, rts_unit) in glb_models.query.iter_mut() {
-        // Check if scene has children (indicating it's loaded)
-        if children.get(entity).is_err() {
-            continue;
+        if scene.children.get(entity).is_err() {
+            continue; // Scene not spawned yet.
         }
-
-        // Check if entity still exists before trying to add components
-        let Some(mut entity_commands) = commands.get_entity(entity) else {
-            // Entity has been despawned, skip processing
+        let Some(mut entity_commands) = commands.get_entity(entity) else { continue };
+        entity_commands.insert(AnimationPlayerSearched);
+        let Some(player_entity) = search_for_animation_player_entity(entity, &scene.children, &scene.players) else {
             continue;
         };
-        // Mark this entity as searched so we don't search again
-        entity_commands.insert(AnimationPlayerSearched);
-
-        // Search for AnimationPlayer in the entity hierarchy
-        if let Some(player_entity) =
-            search_for_animation_player_entity(entity, &children, &animation_players)
-        {
-            // Store the AnimationPlayer entity in the controller
-            controller.animation_player = Some(player_entity);
-
-            // Load multiple animations based on unit type
-            if let Some(scene_path) = asset_server.get_path(scene_root.0.id()) {
-                let scene_path_str = scene_path.path().display().to_string();
-
-                // Determine which animations to try loading based on unit type
-                let animations_to_load = get_animations_for_unit(&rts_unit.unit_type);
-
-                let mut graph = AnimationGraph::new();
-                let mut loaded_any = false;
-
-                for animation_name in &animations_to_load {
-                    let animation_path = format!("{}#{}", scene_path_str, animation_name);
-                    let animation_clip: Handle<bevy::animation::AnimationClip> =
-                        asset_server.load(&animation_path);
-
-                    // Try to add this animation to the graph
-                    if let Ok(node_index) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        graph.add_clip(animation_clip.clone(), 1.0, graph.root)
-                    })) {
-                        controller.animation_clips.insert(animation_name.clone(), node_index);
-
-                        // Set the first successful animation as default
-                        if controller.animation_node_index.is_none() {
-                            controller.animation_node_index = Some(node_index);
-                        }
-
-                        loaded_any = true;
-                    }
-                }
-
-                if loaded_any {
-                    let graph_handle = animation_graphs.add(graph);
-
-                    // Insert the graph handle on the AnimationPlayer entity
-                    if let Some(mut entity_commands) = commands.get_entity(player_entity) {
-                        entity_commands.insert(AnimationGraphHandle(graph_handle));
-                    }
-
-                    // Start playing default animation immediately
-                    if let Ok(mut player) = animation_players.get_mut(player_entity) {
-                        if let Some(node_index) = controller.animation_node_index {
-                            play_with_speed(&mut player, node_index, rts_unit.unit_type.as_ref());
-                        }
-                    }
-                }
-            }
+        controller.animation_player = Some(player_entity);
+        let Some(scene_path) = asset_server.get_path(scene_root.0.id()) else { continue };
+        let scene_path = scene_path.path().display().to_string();
+        let Some(graph) = build_clip_graph(&scene_path, &rts_unit.unit_type, &mut controller, &asset_server) else {
+            continue;
+        };
+        if let Some(mut player_commands) = commands.get_entity(player_entity) {
+            player_commands.insert(AnimationGraphHandle(animation_graphs.add(graph)));
+        }
+        if let (Ok(mut player), Some(node)) = (scene.players.get_mut(player_entity), controller.animation_node_index) {
+            play_with_speed(&mut player, node, rts_unit.unit_type.as_ref());
         }
     }
+}
+
+/// Graph of every clip this unit type uses, recording each clip's node in `controller`
+/// (the first becomes the default). `None` if the unit type uses no clips.
+fn build_clip_graph(
+    scene_path: &str,
+    unit_type: &Option<UnitType>,
+    controller: &mut UnitAnimationController,
+    asset_server: &AssetServer,
+) -> Option<AnimationGraph> {
+    let mut graph = AnimationGraph::new();
+    for name in get_animations_for_unit(unit_type) {
+        let clip = asset_server.load(format!("{scene_path}#{name}"));
+        let node = graph.add_clip(clip, 1.0, graph.root);
+        controller.animation_node_index.get_or_insert(node);
+        controller.animation_clips.insert(name, node);
+    }
+    (!controller.animation_clips.is_empty()).then_some(graph)
 }
 
 // Mark component to track that we've searched for an animation player

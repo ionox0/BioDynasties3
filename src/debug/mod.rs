@@ -1,6 +1,7 @@
-use bevy::prelude::*;
 use bevy::diagnostic::DiagnosticsStore;
-use crate::core::components::UnitType;
+use bevy::ecs::system::SystemParam;
+use bevy::prelude::*;
+use crate::core::components::{Building, Movement, ResourceSource, RTSUnit, UnitType};
 use crate::entities::entity_factory::EntityFactory;
 use crate::world::static_terrain::StaticTerrainHeights;
 
@@ -29,32 +30,30 @@ impl Plugin for DebugPlugin {
     }
 }
 
+/// Entity counts by kind, for the periodic memory log.
+#[derive(SystemParam)]
+struct EntityCensus<'w, 's> {
+    all: Query<'w, 's, Entity>,
+    units: Query<'w, 's, Entity, With<RTSUnit>>,
+    movers: Query<'w, 's, Entity, With<Movement>>,
+    resources: Query<'w, 's, Entity, With<ResourceSource>>,
+    buildings: Query<'w, 's, Entity, With<Building>>,
+}
+
 /// System to track entity growth and memory usage
-fn debug_memory_system(
-    entities: Query<Entity>,
-    units: Query<Entity, With<crate::core::components::RTSUnit>>,
-    movements: Query<Entity, With<crate::core::components::Movement>>,
-    resources: Query<Entity, With<crate::core::components::ResourceSource>>,
-    buildings: Query<Entity, With<crate::core::components::Building>>,
-    time: Res<Time>,
-    mut last_log: Local<f32>,
-) {
+fn debug_memory_system(census: EntityCensus, time: Res<Time>, mut last_log: Local<f32>) {
     let current_time = time.elapsed_secs();
     if current_time - *last_log <= 10.0 {
         return;
     }
-
-    let total_entities = entities.iter().count();
-    let unit_count = units.iter().count();
-    let movement_count = movements.iter().count();
-    let resource_count = resources.iter().count();
-    let building_count = buildings.iter().count();
-
     info!(
         "MEMORY DEBUG - Total: {}, Units: {}, Movement: {}, Resources: {}, Buildings: {}",
-        total_entities, unit_count, movement_count, resource_count, building_count
+        census.all.iter().count(),
+        census.units.iter().count(),
+        census.movers.iter().count(),
+        census.resources.iter().count(),
+        census.buildings.iter().count(),
     );
-
     *last_log = current_time;
 }
 

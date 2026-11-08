@@ -22,10 +22,6 @@ opt-level = 3
 opt-level = 0
 debug = 2
 
-# Bevy-specific optimizations for dev builds
-[profile.dev.package.bevy_dylib]
-opt-level = 3
-
 [profile.release]
 debug = false
 strip = false

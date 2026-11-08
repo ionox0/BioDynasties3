@@ -59,7 +59,7 @@ pub(crate) fn goal_generator(
     mut goals: ResMut<GlobalGoalManager>,
     mut state: Local<GoalGeneratorState>,
     time: Res<Time>,
-    mut queries: GeneratorQueries,
+    queries: GeneratorQueries,
 ) {
     let now = time.elapsed_secs();
     let mut rng = rand::thread_rng();

@@ -103,6 +103,6 @@ fn execute_build_unit(
     stockpile.nectar -= cost;
     writers.queue_production.send(QueueProductionEvent {
         building: *building,
-        unit_type: unit_type.clone(),
+        unit_type: *unit_type,
     });
 }

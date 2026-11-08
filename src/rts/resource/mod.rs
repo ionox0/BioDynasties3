@@ -5,6 +5,7 @@ pub mod gathering;
 use crate::core::components::*;
 use crate::core::GameSet;
 use crate::core::resources::Stockpiles;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use self::events::*;
 use self::gathering::gathering_system;
@@ -53,12 +54,26 @@ impl Plugin for ResourceStatePlugin {
     }
 }
 
+/// Gatherers spawned this frame.
+#[derive(SystemParam)]
+struct NewGatherers<'w, 's> {
+    query: Query<'w, 's, Entity, Added<ResourceGatherer>>,
+}
+
+type GathererStateData = (&'static mut GatheringState, &'static ResourceGatherer, Option<&'static Movement>, &'static mut UnitState);
+
+/// Living gatherers whose activity state is derived from their gathering progress.
+#[derive(SystemParam)]
+struct GatheringUnits<'w, 's> {
+    query: Query<'w, 's, GathererStateData, Without<Dying>>,
+}
+
 /// Inserts `GatheringState` and `UnitState::Idle` on newly spawned gatherers.
 fn add_gathering_state_to_gatherers(
     mut commands: Commands,
-    new_gatherers: Query<Entity, Added<ResourceGatherer>>,
+    new_gatherers: NewGatherers,
 ) {
-    for entity in new_gatherers.iter() {
+    for entity in new_gatherers.query.iter() {
         commands.entity(entity).insert((GatheringState::default(), UnitState::Idle));
     }
 }
@@ -115,11 +130,11 @@ pub fn resource_state_system(
 /// Derives `UnitState` from `ResourceGatherer` each frame.
 /// Sole gathering-domain writer of `UnitState`. Skips if `UnitState` is a combat or Moving variant.
 fn update_gathering_states(
-    mut query: Query<(Entity, &mut GatheringState, &ResourceGatherer, Option<&Movement>, &mut UnitState), Without<Dying>>,
+    mut gatherers: GatheringUnits,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (_, mut gs, gatherer, movement, mut current_state) in query.iter_mut() {
+    for (mut gs, gatherer, movement, mut current_state) in gatherers.query.iter_mut() {
         if is_combat_or_moving_state(&current_state) {
             continue;
         }

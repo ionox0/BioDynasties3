@@ -13,11 +13,11 @@ const WAVE_COMMIT_FRACTION: f32 = 0.75;
 const ATTACK_PRIORITY: f32 = 70.0;
 const MIN_UNITS_TO_ATTACK: usize = 100;
 
+type AiFighterData = (Entity, &'static RTSUnit, &'static UnitState, &'static Combat, &'static Transform);
+
 #[derive(SystemParam)]
 pub(crate) struct CombatParams<'w, 's> {
-    #[allow(clippy::type_complexity)]
-    pub(crate) idle_ai: Query<'w, 's, (Entity, &'static RTSUnit, &'static UnitState, &'static Combat, &'static Transform)>,
-    #[allow(clippy::type_complexity)]
+    pub(crate) idle_ai: Query<'w, 's, AiFighterData>,
     pub(crate) all_units: Query<'w, 's, &'static RTSUnit, (Without<Building>, Without<Dying>)>,
     pub(crate) target_grid: Res<'w, TargetGrid>,
 }

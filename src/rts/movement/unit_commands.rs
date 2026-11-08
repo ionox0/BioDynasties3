@@ -28,9 +28,12 @@ impl Plugin for UnitCommandsPlugin {
     }
 }
 
+/// A unit that can receive orders, plus whether it can gather and fight.
+type OrderableUnitData = (Entity, &'static Selectable, Option<&'static ResourceGatherer>, Option<&'static Combat>);
+
 #[derive(SystemParam)]
 struct CommandTargets<'w, 's> {
-    selectables: Query<'w, 's, (Entity, &'static Selectable, Option<&'static ResourceGatherer>, Option<&'static Combat>), With<RTSUnit>>,
+    selectables: Query<'w, 's, OrderableUnitData, With<RTSUnit>>,
     resources: Query<'w, 's, (Entity, &'static Transform, &'static ResourceSource)>,
     move_events: EventWriter<'w, MovementTargetEvent>,
     formation_events: EventWriter<'w, FormationMoveEvent>,

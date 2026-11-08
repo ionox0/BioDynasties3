@@ -7,19 +7,18 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::{Building, ResourceSource, RTSUnit, Selectable};
 
-#[derive(SystemParam)]
-pub(crate) struct SelectableUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), (With<RTSUnit>, Without<Building>)>,
-}
+type SelectableData = (Entity, &'static Transform, &'static Selectable);
+/// Mobile units (buildings are also `RTSUnit`s).
+type MobileUnit = (With<RTSUnit>, Without<Building>);
+/// Hit radius for resource nodes, which have no `Selectable`.
+const RESOURCE_HIT_RADIUS: f32 = 8.0;
 
+/// Everything the cursor can hover, in priority order: units, then buildings, then resources.
 #[derive(SystemParam)]
-pub(crate) struct SelectableBuildings<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Transform, &'static Selectable), With<Building>>,
-}
-
-#[derive(SystemParam)]
-pub(crate) struct ResourceNodes<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Transform), With<ResourceSource>>,
+pub(crate) struct CursorTargets<'w, 's> {
+    units: Query<'w, 's, SelectableData, MobileUnit>,
+    buildings: Query<'w, 's, SelectableData, With<Building>>,
+    resources: Query<'w, 's, (Entity, &'static Transform), With<ResourceSource>>,
 }
 
 /// What category of object is currently under the cursor.
@@ -59,17 +58,11 @@ fn update_cursor_state(
     mut cursor_state: ResMut<CursorState>,
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    units: SelectableUnits,
-    buildings: SelectableBuildings,
-    resources: ResourceNodes,
+    targets: CursorTargets,
 ) {
     let Ok(window) = windows.get_single() else { return };
     let Ok((camera, camera_tf)) = camera_q.get_single() else { return };
-    let Some(cursor_pos) = window.cursor_position() else {
-        cursor_state.hovered = HoveredType::None;
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(camera_tf, cursor_pos) else {
+    let Some(ray) = window.cursor_position().and_then(|pos| camera.viewport_to_world(camera_tf, pos).ok()) else {
         cursor_state.hovered = HoveredType::None;
         return;
     };
@@ -82,49 +75,23 @@ fn update_cursor_state(
     };
     cursor_state.world_position = ray.origin + *ray.direction * ground_t;
 
-    // Check units
-    let mut best_unit: Option<(Entity, f32)> = None;
-    for (entity, transform, sel) in units.query.iter() {
-        if let Some(proj) = ray_sphere_proj(&ray, transform.translation, sel.selection_radius) {
-            if best_unit.is_none_or(|(_, d)| proj < d) {
-                best_unit = Some((entity, proj));
-            }
-        }
-    }
-    if let Some((entity, _)) = best_unit {
-        cursor_state.hovered = HoveredType::Unit(entity);
-        return;
-    }
+    let selectable_hit = |(entity, tf, sel): (Entity, &Transform, &Selectable)| (entity, tf.translation, sel.selection_radius);
+    cursor_state.hovered = closest_hit(&ray, targets.units.iter().map(selectable_hit))
+        .map(HoveredType::Unit)
+        .or_else(|| closest_hit(&ray, targets.buildings.iter().map(selectable_hit)).map(HoveredType::Building))
+        .or_else(|| {
+            let resources = targets.resources.iter().map(|(e, tf)| (e, tf.translation, RESOURCE_HIT_RADIUS));
+            closest_hit(&ray, resources).map(HoveredType::Resource)
+        })
+        .unwrap_or(HoveredType::Terrain(cursor_state.world_position));
+}
 
-    // Check buildings
-    let mut best_building: Option<(Entity, f32)> = None;
-    for (entity, transform, sel) in buildings.query.iter() {
-        if let Some(proj) = ray_sphere_proj(&ray, transform.translation, sel.selection_radius) {
-            if best_building.is_none_or(|(_, d)| proj < d) {
-                best_building = Some((entity, proj));
-            }
-        }
-    }
-    if let Some((entity, _)) = best_building {
-        cursor_state.hovered = HoveredType::Building(entity);
-        return;
-    }
-
-    // Check resources
-    let mut best_resource: Option<(Entity, f32)> = None;
-    for (entity, transform) in resources.query.iter() {
-        if let Some(proj) = ray_sphere_proj(&ray, transform.translation, 8.0) {
-            if best_resource.is_none_or(|(_, d)| proj < d) {
-                best_resource = Some((entity, proj));
-            }
-        }
-    }
-    if let Some((entity, _)) = best_resource {
-        cursor_state.hovered = HoveredType::Resource(entity);
-        return;
-    }
-
-    cursor_state.hovered = HoveredType::Terrain(cursor_state.world_position);
+/// Nearest entity along `ray` whose hit sphere (centre, radius) the ray passes through.
+fn closest_hit(ray: &Ray3d, candidates: impl Iterator<Item = (Entity, Vec3, f32)>) -> Option<Entity> {
+    candidates
+        .filter_map(|(entity, center, radius)| Some((entity, ray_sphere_proj(ray, center, radius)?)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(entity, _)| entity)
 }
 
 /// Returns the projection distance along `ray` to the closest approach of the

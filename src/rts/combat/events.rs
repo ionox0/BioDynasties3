@@ -9,7 +9,6 @@ use crate::core::components::DamageType;
 /// Consumed by `damage_resolution_system`.
 #[derive(Event, Debug, Clone)]
 pub struct DamageEvent {
-    #[allow(dead_code)]
     pub attacker: Entity,
     pub target: Entity,
     pub damage: f32,

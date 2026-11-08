@@ -2,6 +2,7 @@ use crate::core::components::*;
 use crate::entities::entity_factory::EntityFactory;
 use crate::world::building_grid::BuildingGrid;
 use crate::world::static_terrain::TerrainNormals;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use tracing::instrument;
 
@@ -64,16 +65,22 @@ pub struct ConstructionCompletedEvent {
     pub building: Entity,
 }
 
+/// Units carrying out construction orders.
+#[derive(SystemParam)]
+pub(crate) struct ConstructorUnits<'w, 's> {
+    query: Query<'w, 's, (&'static mut Constructor, &'static Position), With<RTSUnit>>,
+}
+
 /// Fires construction progress events — does NOT mutate Building directly.
 #[instrument(skip_all)]
 pub fn construction_system(
-    mut constructors: Query<(&mut Constructor, &Position), With<RTSUnit>>,
+    mut constructors: ConstructorUnits,
     buildings: Query<(Entity, &Building)>,
     time: Res<Time>,
     mut progress_events: EventWriter<ConstructionProgressEvent>,
     mut completed_events: EventWriter<ConstructionCompletedEvent>,
 ) {
-    for (mut constructor, _constructor_pos) in constructors.iter_mut() {
+    for (mut constructor, _constructor_pos) in constructors.query.iter_mut() {
         fire_construction_events(
             &mut constructor,
             &buildings,
