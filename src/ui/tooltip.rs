@@ -224,7 +224,7 @@ pub struct UnitDataQueries<'w, 's> {
     pub movement_query: Query<'w, 's, &'static Movement>,
     pub building_query: Query<'w, 's, &'static Building>,
     pub resource_source_query: Query<'w, 's, (&'static ResourceSource, &'static CollisionRadius)>,
-    pub pathfinding_query: Query<'w, 's, &'static PathfindingState>,
+    pub route_query: Query<'w, 's, &'static Route>,
 }
 
 
@@ -275,8 +275,8 @@ fn build_tooltip_content(
         }
     }
 
-    if let Ok(pf) = unit_data.pathfinding_query.get(entity) {
-        let route = match pf.route {
+    if let Ok(route) = unit_data.route_query.get(entity) {
+        let route = match route {
             Route::Direct => "direct",
             Route::Pending => "waiting for flow field",
             Route::Field(_) => "flow field",

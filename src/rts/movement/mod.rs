@@ -1,6 +1,6 @@
 //! Unit movement system.
 //!
-//! Owns: `Movement.target_position / current_velocity`, `PathfindingState.route`
+//! Owns: `Movement.target_position / current_velocity`, `Route`
 //! Inputs: `MovementTargetEvent`, `StopMovementEvent`
 //! Outputs: `UnitArrivedEvent` (fired when a unit reaches its target)
 //!
@@ -10,7 +10,7 @@
 pub mod events;
 pub mod formation;
 pub mod formation_events;
-pub mod pathfinding;
+pub mod navigation;
 pub mod unit_commands;
 
 use bevy::ecs::system::SystemParam;
@@ -23,9 +23,9 @@ use crate::core::constants::movement as mc;
 use crate::core::GameSet;
 use crate::world::static_terrain::{StaticTerrainHeights, TerrainNormals};
 use self::events::{MovementTargetEvent, StopMovementEvent, UnitArrivedEvent};
-use self::pathfinding::flow_field::has_clear_line;
-use self::pathfinding::grid::CELL_SIZE;
-use self::pathfinding::systems::{poll_flow_fields, NavGridResource, PendingFlowFields, RouteRequest};
+use self::navigation::flow_field::has_clear_line;
+use self::navigation::nav_grid::CELL_SIZE;
+use self::navigation::systems::{poll_flow_fields, NavGridResource, PendingFlowFields, RouteRequest};
 
 /// Units this close to their target steer straight at it instead of following the field.
 const DIRECT_STEER_RANGE: f32 = CELL_SIZE * 2.0;
@@ -62,7 +62,7 @@ impl Plugin for MovementPlugin {
 /// Units receiving move orders.
 #[derive(SystemParam)]
 pub(crate) struct MoveOrderUnits<'w, 's> {
-    query: Query<'w, 's, (&'static Transform, &'static mut Movement, &'static mut PathfindingState)>,
+    query: Query<'w, 's, (&'static Transform, &'static mut Movement, &'static mut Route)>,
 }
 
 /// Sole writer of `Movement.target_position` — applies `MovementTargetEvent`.
@@ -76,9 +76,9 @@ fn apply_movement_targets(
 ) {
     let mut orders: HashMap<IVec2, (Vec3, Vec<RouteRequest>)> = HashMap::new();
     for ev in events.read() {
-        let Ok((tf, mut mv, mut pf)) = units.query.get_mut(ev.entity) else { continue };
+        let Ok((tf, mut mv, mut route)) = units.query.get_mut(ev.entity) else { continue };
         mv.target_position = Some(ev.target_position);
-        pf.route = Route::Direct;
+        *route = Route::Direct;
         let Some(grid) = grid.as_ref() else { continue };
         let start = tf.translation;
         let is_short_clear = flat_dist(start, ev.target_position) <= LINE_CHECK_RANGE
@@ -86,7 +86,7 @@ fn apply_movement_targets(
         if is_short_clear {
             continue;
         }
-        pf.route = Route::Pending;
+        *route = Route::Pending;
         let key = grid.0.cell_of(ev.group_goal).unwrap_or(IVec2::MIN);
         orders
             .entry(key)
@@ -102,14 +102,14 @@ fn apply_movement_targets(
 
 /// Clears movement when `StopMovementEvent` fires (sent by combat system).
 fn stop_unit_movement(
-    mut units: Query<(&mut Movement, &mut PathfindingState)>,
+    mut units: Query<(&mut Movement, &mut Route)>,
     mut events: EventReader<StopMovementEvent>,
 ) {
     for ev in events.read() {
-        let Ok((mut mv, mut pf)) = units.get_mut(ev.entity) else { continue };
+        let Ok((mut mv, mut route)) = units.get_mut(ev.entity) else { continue };
         mv.target_position = None;
         mv.current_velocity = Vec3::ZERO;
-        pf.route = Route::Direct;
+        *route = Route::Direct;
     }
 }
 
@@ -120,7 +120,7 @@ fn stop_unit_movement(
 /// Every unit that can move.
 #[derive(SystemParam)]
 pub(crate) struct MovingUnits<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static mut Transform, &'static mut Movement, &'static PathfindingState, &'static RTSUnit)>,
+    query: Query<'w, 's, (Entity, &'static mut Transform, &'static mut Movement, &'static Route, &'static RTSUnit)>,
 }
 
 /// Terrain lookups movement needs: surface height and slope.
@@ -148,8 +148,8 @@ fn move_units(
     let ctx = StepCtx { terrain: &terrain.heights, normals: &terrain.normals, dt: time.delta_secs().min(0.033) };
     units.query.par_iter_mut().for_each_init(
         || arrivals.borrow_local_mut(),
-        |local, (entity, mut tf, mut mv, pf, rts_unit)| {
-            if step_unit(&mut tf, &mut mv, pf, &ctx) {
+        |local, (entity, mut tf, mut mv, route, rts_unit)| {
+            if step_unit(&mut tf, &mut mv, route, &ctx) {
                 local.push(entity);
             }
             if let Some(dir) = mv.current_velocity.try_normalize() {
@@ -161,7 +161,7 @@ fn move_units(
 }
 
 /// Advances one unit toward its target. Returns true on the frame it arrives.
-fn step_unit(tf: &mut Transform, mv: &mut Movement, pf: &PathfindingState, ctx: &StepCtx) -> bool {
+fn step_unit(tf: &mut Transform, mv: &mut Movement, route: &Route, ctx: &StepCtx) -> bool {
     mv.current_velocity = Vec3::ZERO;
     let Some(target) = mv.target_position else {
         snap_to_terrain(tf, ctx.terrain);
@@ -172,7 +172,7 @@ fn step_unit(tf: &mut Transform, mv: &mut Movement, pf: &PathfindingState, ctx: 
         mv.target_position = None;
         return true;
     }
-    let Some(dir) = steering_direction(tf.translation, target, distance, &pf.route) else {
+    let Some(dir) = steering_direction(tf.translation, target, distance, route) else {
         snap_to_terrain(tf, ctx.terrain);
         return false;
     };
@@ -247,7 +247,7 @@ fn update_rotation(
     tf.rotation = tf.rotation.slerp(tilt * yaw, turn);
 }
 
-/// Keeps `Position` in sync with `Transform` so spatial grid readers stay current.
+/// Keeps `Position` in sync with `Transform` so proximity-grid readers stay current.
 fn sync_position_component(mut units: Query<(&Transform, &mut Position)>) {
     for (tf, mut pos) in units.iter_mut() {
         pos.translation = tf.translation;

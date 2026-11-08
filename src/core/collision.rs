@@ -15,8 +15,8 @@ use bevy::ecs::system::SystemParam;
 use hashbrown::HashMap;
 
 use crate::core::components::*;
-use crate::core::resources::SpatialGrids;
-use crate::core::spatial_grid::GridCoord;
+use crate::core::resources::UnitProximity;
+use crate::core::proximity_grid::ProximityCell;
 use crate::core::GameSet;
 
 /// Push strength per unit of overlap (world units out per world unit in).
@@ -47,7 +47,7 @@ struct SpatiallyTrackedUnits<'w, 's> {
             Entity,
             &'static Transform,
             &'static CollisionRadius,
-            &'static mut SpatialGridPosition,
+            &'static mut ProximityCellTracker,
         ),
         With<RTSUnit>,
     >,
@@ -69,9 +69,9 @@ pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SpatialGrids>().add_systems(
+        app.init_resource::<UnitProximity>().add_systems(
             Update,
-            (spatial_grid_update_system, separate_units)
+            (update_unit_proximity, separate_units)
                 .chain()
                 .after(GameSet::RtsUpdate),
         );
@@ -80,33 +80,33 @@ impl Plugin for CollisionPlugin {
 
 // --- Systems ---
 
-/// Incrementally syncs unit positions into the spatial grid.
-fn spatial_grid_update_system(
-    mut grids: ResMut<SpatialGrids>,
+/// Incrementally syncs unit positions into the proximity grid.
+fn update_unit_proximity(
+    mut grids: ResMut<UnitProximity>,
     mut units: SpatiallyTrackedUnits,
 ) {
     use std::collections::HashSet;
     let live: HashSet<Entity> = units.query.iter().map(|(e, _, _, _)| e).collect();
     let stale: Vec<Entity> = grids
-        .entity_grid
+        .grid
         .entity_positions
         .keys()
         .copied()
         .filter(|e| !live.contains(e))
         .collect();
     for entity in stale {
-        grids.entity_grid.remove_item(entity);
+        grids.grid.remove_item(entity);
     }
     for (entity, transform, radius, mut grid_pos) in units.query.iter_mut() {
         let coord =
-            GridCoord::from_world_pos(transform.translation, grids.entity_grid.cell_size);
-        if grid_pos.dirty || grid_pos.last_grid_coord != Some(coord) {
-            grids.entity_grid.update_entity(
+            ProximityCell::from_world_pos(transform.translation, grids.grid.cell_size);
+        if grid_pos.dirty || grid_pos.last_cell != Some(coord) {
+            grids.grid.update_entity(
                 entity,
                 transform.translation,
                 radius.radius,
             );
-            grid_pos.last_grid_coord = Some(coord);
+            grid_pos.last_cell = Some(coord);
             grid_pos.dirty = false;
         }
     }
@@ -115,7 +115,7 @@ fn spatial_grid_update_system(
 /// Pushes overlapping units apart. Direct position correction — no events, no velocity changes.
 /// Unit-unit separation is only applied to idle units to avoid fighting path-following.
 fn separate_units(
-    grids: Res<SpatialGrids>,
+    grids: Res<UnitProximity>,
     mut units: MobileUnits,
     obstacles: StaticObstacles,
 ) {
@@ -161,9 +161,9 @@ fn obstacle_separation(pos: Vec3, radius: f32, obstacles: &StaticObstacles) -> V
     push
 }
 
-fn unit_separation(entity: Entity, pos: Vec3, radius: f32, grids: &SpatialGrids) -> Vec3 {
+fn unit_separation(entity: Entity, pos: Vec3, radius: f32, grids: &UnitProximity) -> Vec3 {
     grids
-        .entity_grid
+        .grid
         .query_nearby_entities(pos, radius * 5.0, Some(entity))
         .into_iter()
         .map(|(_, other_pos, other_radius)| {

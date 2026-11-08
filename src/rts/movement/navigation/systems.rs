@@ -1,6 +1,6 @@
 //! Bevy systems that build flow fields off the main thread and hand them to units.
 //!
-//! Ownership: `PathfindingState.route` (written by MovementPlugin through these helpers).
+//! Ownership: `Route` (written by MovementPlugin through these helpers).
 
 use bevy::prelude::*;
 use bevy::tasks::futures_lite::future;
@@ -8,9 +8,9 @@ use bevy::tasks::{block_on, AsyncComputeTaskPool, Task};
 use std::sync::Arc;
 use tracing::instrument;
 
-use crate::core::components::{Movement, PathfindingState, Route};
+use crate::core::components::{Movement, Route};
 use super::flow_field::FlowField;
-use super::grid::NavGrid;
+use super::nav_grid::NavGrid;
 
 /// Coarse passability grid shared with background flow-field builds.
 #[derive(Resource)]
@@ -52,15 +52,15 @@ fn build_field(grid: Arc<NavGrid>, goal: Vec3, starts: &[Vec3]) -> FlowField {
 /// Gives each finished flow field to the units still heading for the target it was built for.
 pub fn poll_flow_fields(
     mut pending: ResMut<PendingFlowFields>,
-    mut units: Query<(&Movement, &mut PathfindingState)>,
+    mut units: Query<(&Movement, &mut Route)>,
 ) {
     pending.0.retain_mut(|field| {
         let Some(built) = block_on(future::poll_once(&mut field.task)) else { return true };
         let built = Arc::new(built);
         for &(entity, target) in &field.units {
-            let Ok((movement, mut pf)) = units.get_mut(entity) else { continue };
-            if movement.target_position == Some(target) && matches!(pf.route, Route::Pending) {
-                pf.route = Route::Field(Arc::clone(&built));
+            let Ok((movement, mut route)) = units.get_mut(entity) else { continue };
+            if movement.target_position == Some(target) && matches!(*route, Route::Pending) {
+                *route = Route::Field(Arc::clone(&built));
             }
         }
         false

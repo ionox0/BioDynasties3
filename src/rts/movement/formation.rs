@@ -7,8 +7,8 @@ use bevy::prelude::*;
 use crate::core::components::RTSUnit;
 use super::events::MovementTargetEvent;
 use super::formation_events::FormationMoveEvent;
-use super::pathfinding::grid::NavGrid;
-use super::pathfinding::systems::NavGridResource;
+use super::navigation::nav_grid::NavGrid;
+use super::navigation::systems::NavGridResource;
 
 const SPACING: f32 = 35.0;
 /// How far (in nav cells) a slot may be nudged off blocked terrain.

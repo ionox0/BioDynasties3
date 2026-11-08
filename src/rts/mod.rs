@@ -13,7 +13,7 @@ pub use construction::ConstructionPlugin;
 pub use cursor_manager::CursorManagerPlugin;
 pub use movement::formation::FormationPlugin;
 pub use movement::MovementPlugin;
-pub use movement::pathfinding::PathfindingPlugin;
+pub use movement::navigation::NavigationPlugin;
 pub use movement::unit_commands::UnitCommandsPlugin;
 pub use production::ProductionPlugin;
 pub use resource::cargo_indicator::CargoIndicatorPlugin;

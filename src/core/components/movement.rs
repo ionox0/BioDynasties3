@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use std::sync::Arc;
-use crate::rts::movement::pathfinding::flow_field::FlowField;
+use crate::rts::movement::navigation::flow_field::FlowField;
 
 // Owned by: MovementSystem (position sync)
 #[derive(Component, Debug, Clone)]
@@ -29,7 +29,8 @@ impl Default for Movement {
 }
 
 /// How a unit gets to its `Movement.target_position`.
-#[derive(Clone, Default)]
+// Owned by: MovementPlugin (apply_movement_targets, poll_flow_fields)
+#[derive(Component, Clone, Default)]
 pub enum Route {
     /// Straight line to the target (clear line of sight, or no navigation grid yet).
     #[default]
@@ -40,28 +41,22 @@ pub enum Route {
     Field(Arc<FlowField>),
 }
 
-// Owned by: MovementPlugin (apply_movement_targets, poll_flow_fields)
-#[derive(Component, Clone, Default)]
-pub struct PathfindingState {
-    pub route: Route,
-}
-
-/// Tracks last known spatial grid cell for incremental updates.
-// Owned by: CollisionPlugin (spatial_grid_update_system)
+/// The proximity-grid cell a unit was last filed under, so it's only re-filed when it changes cell.
+// Owned by: CollisionPlugin (update_unit_proximity)
 #[derive(Component, Debug, Clone)]
-pub struct SpatialGridPosition {
-    pub last_grid_coord: Option<crate::core::spatial_grid::GridCoord>,
+pub struct ProximityCellTracker {
+    pub last_cell: Option<crate::core::proximity_grid::ProximityCell>,
     /// Set to true on spawn and whenever the entity moves to a new cell.
     pub dirty: bool,
 }
 
-impl Default for SpatialGridPosition {
+impl Default for ProximityCellTracker {
     fn default() -> Self {
-        Self { last_grid_coord: None, dirty: true }
+        Self { last_cell: None, dirty: true }
     }
 }
 
-// Owned by: CollisionPlugin (spatial_grid_update_system, unit_collision_avoidance_system)
+// Owned by: CollisionPlugin (update_unit_proximity, separate_units)
 #[derive(Component, Debug, Clone)]
 pub struct CollisionRadius {
     pub radius: f32,

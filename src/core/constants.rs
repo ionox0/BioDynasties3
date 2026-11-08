@@ -90,7 +90,7 @@ pub mod resource_interaction {
 }
 
 // === GRID SYSTEM ===
-pub mod grid {
+pub mod grid_overlay {
     use bevy::prelude::*;
 
     pub const GRID_SPACING: f32 = 50.0;

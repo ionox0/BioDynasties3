@@ -1,7 +1,8 @@
-//! Spatial Grid utility for efficient spatial queries
-//! 
-//! This module provides a generic spatial partitioning system that can be used
-//! for fast collision detection, pathfinding, and other spatial queries.
+//! Proximity grid: answers "which entities are near this point?"
+//!
+//! A sparse hash grid of moving entities, updated incrementally as they change cells.
+//! Used for unit separation and combat target acquisition. Terrain walkability is a
+//! separate concern, handled by the navigation grid (`NavGrid`).
 
 use bevy::prelude::*;
 use hashbrown::HashMap;
@@ -9,25 +10,25 @@ use hashbrown::HashMap;
 /// Default grid cell size in world units
 pub const DEFAULT_GRID_CELL_SIZE: f32 = 50.0;
 
-/// A spatial grid with incremental update capabilities
+/// Sparse grid of keyed items, updated incrementally as items move between cells.
 #[derive(Debug)]
-pub struct IncrementalSpatialGrid<K, T> 
+pub struct ProximityGrid<K, T> 
 where
     K: Copy + Eq + std::hash::Hash,
 {
-    pub cells: HashMap<GridCoord, Vec<(K, T)>>,
-    pub entity_positions: HashMap<K, GridCoord>,
+    pub cells: HashMap<ProximityCell, Vec<(K, T)>>,
+    pub entity_positions: HashMap<K, ProximityCell>,
     pub cell_size: f32,
 }
 
 /// Grid coordinate representation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GridCoord {
+pub struct ProximityCell {
     pub x: i32,
     pub z: i32,
 }
 
-impl GridCoord {
+impl ProximityCell {
     /// Create a grid coordinate from a world position
     pub fn from_world_pos(pos: Vec3, cell_size: f32) -> Self {
         Self {
@@ -37,27 +38,27 @@ impl GridCoord {
     }
     
     /// Get all neighboring coordinates (including self) in a 3x3 grid
-    pub fn get_neighboring_coords(self) -> [GridCoord; 9] {
+    pub fn get_neighboring_coords(self) -> [ProximityCell; 9] {
         [
-            GridCoord { x: self.x - 1, z: self.z - 1 },
-            GridCoord { x: self.x, z: self.z - 1 },
-            GridCoord { x: self.x + 1, z: self.z - 1 },
-            GridCoord { x: self.x - 1, z: self.z },
+            ProximityCell { x: self.x - 1, z: self.z - 1 },
+            ProximityCell { x: self.x, z: self.z - 1 },
+            ProximityCell { x: self.x + 1, z: self.z - 1 },
+            ProximityCell { x: self.x - 1, z: self.z },
             self, // center
-            GridCoord { x: self.x + 1, z: self.z },
-            GridCoord { x: self.x - 1, z: self.z + 1 },
-            GridCoord { x: self.x, z: self.z + 1 },
-            GridCoord { x: self.x + 1, z: self.z + 1 },
+            ProximityCell { x: self.x + 1, z: self.z },
+            ProximityCell { x: self.x - 1, z: self.z + 1 },
+            ProximityCell { x: self.x, z: self.z + 1 },
+            ProximityCell { x: self.x + 1, z: self.z + 1 },
         ]
     }
 }
 
 
-impl<K, T> IncrementalSpatialGrid<K, T> 
+impl<K, T> ProximityGrid<K, T> 
 where
     K: Copy + Eq + std::hash::Hash,
 {
-    /// Create a new incremental spatial grid with the specified cell size
+    /// Create an empty grid with the given cell size.
     pub fn new(cell_size: f32) -> Self {
         Self {
             cells: HashMap::new(),
@@ -66,7 +67,7 @@ where
         }
     }
     
-    /// Create a new incremental spatial grid with default cell size
+    /// Create an empty grid with the default cell size.
     pub fn with_default_size() -> Self {
         Self::new(DEFAULT_GRID_CELL_SIZE)
     }
@@ -74,7 +75,7 @@ where
     
     /// Insert or update an item's position. Returns true if the item changed grid cells.
     pub fn update_item(&mut self, key: K, position: Vec3, item: T) -> bool {
-        let new_coord = GridCoord::from_world_pos(position, self.cell_size);
+        let new_coord = ProximityCell::from_world_pos(position, self.cell_size);
         
         // Check if this is a position update
         if let Some(&old_coord) = self.entity_positions.get(&key) {
@@ -108,7 +109,7 @@ where
     }
     
     /// Remove item from a specific cell
-    fn remove_from_cell(&mut self, key: K, coord: GridCoord) {
+    fn remove_from_cell(&mut self, key: K, coord: ProximityCell) {
         if let Some(cell) = self.cells.get_mut(&coord) {
             cell.retain(|(k, _)| *k != key);
             if cell.is_empty() {
@@ -120,7 +121,7 @@ where
     
     /// Get all items with keys in the cell and neighboring cells around the given position
     pub fn query_nearby_with_keys(&self, position: Vec3) -> Vec<(K, &T)> {
-        let coord = GridCoord::from_world_pos(position, self.cell_size);
+        let coord = ProximityCell::from_world_pos(position, self.cell_size);
         let neighboring_coords = coord.get_neighboring_coords();
         
         let mut results = Vec::new();
@@ -135,11 +136,11 @@ where
     }
 }
 
-/// Incremental spatial grid for entity data (entity -> position + radius)
-pub type IncrementalEntitySpatialGrid = IncrementalSpatialGrid<Entity, (Vec3, f32)>;
+/// Proximity grid of units: entity → (position, collision radius).
+pub type UnitProximityGrid = ProximityGrid<Entity, (Vec3, f32)>;
 
 
-impl IncrementalEntitySpatialGrid {
+impl UnitProximityGrid {
     /// Update an entity's position and radius. Returns true if it changed grid cells.
     pub fn update_entity(&mut self, entity: Entity, position: Vec3, radius: f32) -> bool {
         self.update_item(entity, position, (position, radius))

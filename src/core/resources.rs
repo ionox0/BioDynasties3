@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use bevy::prelude::*;
-use crate::core::spatial_grid::IncrementalEntitySpatialGrid;
+use crate::core::proximity_grid::UnitProximityGrid;
 use crate::core::components::ResourceType;
 
-/// Persistent spatial grids for efficient collision and movement queries
+/// Proximity grid of all units, used for separation queries.
 #[derive(Resource, Debug)]
-pub struct SpatialGrids {
-    pub entity_grid: IncrementalEntitySpatialGrid,
+pub struct UnitProximity {
+    pub grid: UnitProximityGrid,
 }
 
-impl Default for SpatialGrids {
+impl Default for UnitProximity {
     fn default() -> Self {
         Self {
-            entity_grid: IncrementalEntitySpatialGrid::with_default_size(),
+            grid: UnitProximityGrid::with_default_size(),
         }
     }
 }

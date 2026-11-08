@@ -34,9 +34,9 @@ impl EntityFactory {
                 current_velocity: Vec3::ZERO,
                 target_position: None,
             },
-            PathfindingState::default(),
+            Route::default(),
             CollisionRadius { radius: stats.collision_radius },
-            SpatialGridPosition::default(),
+            ProximityCellTracker::default(),
             Selectable::default(),
             RTSHealth {
                 current: stats.health.current,

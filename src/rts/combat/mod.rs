@@ -42,7 +42,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use crate::core::components::*;
 use crate::core::GameSet;
-use crate::core::spatial_grid::IncrementalSpatialGrid;
+use crate::core::proximity_grid::ProximityGrid;
 use crate::rts::movement::events::{MovementTargetEvent, StopMovementEvent};
 use self::events::{CombatStopEvent, CombatTargetEvent, DamageEvent, DeathEvent};
 
@@ -124,8 +124,8 @@ mod cc {
 
 // ─── Spatial target grid ─────────────────────────────────────────────────────
 
-/// Spatial grid mapping Entity → (world position, player_id) for fast target queries.
-pub type CombatTargetGrid = IncrementalSpatialGrid<Entity, (Vec3, u8)>;
+/// Proximity grid mapping Entity → (world position, player_id) for fast target queries.
+pub type CombatTargetGrid = ProximityGrid<Entity, (Vec3, u8)>;
 
 #[derive(Resource)]
 pub struct TargetGrid(pub CombatTargetGrid);
@@ -225,7 +225,7 @@ fn combat_stop_handler(
 
 // ─── Target management ───────────────────────────────────────────────────────
 
-/// Refreshes the spatial grid, validates existing targets, and auto-acquires new ones.
+/// Refreshes the target proximity grid, validates existing targets, and auto-acquires new ones.
 fn target_management_system(
     mut combatants: CombatUnits,
     alive: AliveUnits,

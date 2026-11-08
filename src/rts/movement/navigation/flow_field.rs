@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use super::grid::NavGrid;
+use super::nav_grid::NavGrid;
 
 const ORTHOGONAL_COST: u32 = 10;
 const DIAGONAL_COST: u32 = 14;
@@ -96,7 +96,7 @@ fn passable_neighbors(grid: &NavGrid, cell: IVec2) -> impl Iterator<Item = (IVec
 /// True if the straight segment between two points crosses only passable cells.
 pub fn has_clear_line(grid: &NavGrid, from: Vec3, to: Vec3) -> bool {
     let delta = Vec2::new(to.x - from.x, to.z - from.z);
-    let samples = (delta.length() / (super::grid::CELL_SIZE * 0.5)).ceil() as usize;
+    let samples = (delta.length() / (super::nav_grid::CELL_SIZE * 0.5)).ceil() as usize;
     (0..=samples).all(|i| {
         let t = i as f32 / samples.max(1) as f32;
         let point = from + Vec3::new(delta.x * t, 0.0, delta.y * t);
@@ -107,7 +107,7 @@ pub fn has_clear_line(grid: &NavGrid, from: Vec3, to: Vec3) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rts::movement::pathfinding::grid::CELL_SIZE;
+    use crate::rts::movement::navigation::nav_grid::CELL_SIZE;
 
     /// 20×20 grid with a wall along x = 10, open only at z = 18.
     fn walled_grid() -> Arc<NavGrid> {

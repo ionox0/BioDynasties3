@@ -17,7 +17,7 @@ pub const RIDGES_SCALE: f32 = 600.0; // Reduced from 1200.0 - more frequent ridg
 pub const DETAIL_SCALE: f32 = 100.0; // Reduced from 200.0 - finer surface details
 pub const MICRO_SCALE: f32 = 40.0; // Very fine micro-variations for maximum granularity
 
-// Shared constants for texture and pathfinding consistency
+// Shared constants for texture and navigation consistency
 // These heights determine both texture selection and terrain passability
 pub const ROCKY_TERRAIN_HEIGHT_THRESHOLD: f32 = 36.0;      // Above this = rocky_terrain (IMPASSABLE)
 

@@ -3,7 +3,7 @@
 //! Provides a toggleable grid overlay that shows 50x50 unit squares
 //! to help with unit placement, distance measurement, and map navigation.
 
-use crate::core::constants::{grid::*, hotkeys::TOGGLE_GRID};
+use crate::core::constants::{grid_overlay::*, hotkeys::TOGGLE_GRID};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
@@ -18,9 +18,9 @@ pub struct GridSettings {
 pub struct GridLine;
 
 /// Plugin for the grid overlay system
-pub struct GridPlugin;
+pub struct GridOverlayPlugin;
 
-impl Plugin for GridPlugin {
+impl Plugin for GridOverlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GridSettings>()
             .add_systems(Startup, setup_grid_system)
