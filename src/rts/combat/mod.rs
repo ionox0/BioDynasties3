@@ -55,7 +55,7 @@ type CombatantData = (Entity, &'static mut Combat, &'static Transform, &'static 
 type AttackerData = (Entity, &'static mut Combat, &'static Transform, &'static CollisionRadius, Option<&'static Movement>);
 /// Fighting units that retaliate when hit (gatherers flee instead).
 type Military = (With<Combat>, Without<ResourceGatherer>, Without<Dying>);
-type CombatStateData = (Entity, &'static mut CombatState, &'static Combat, &'static Transform, Option<&'static Movement>, &'static mut UnitState);
+type CombatStateData = (&'static mut CombatState, &'static Combat, Option<&'static Movement>, &'static mut UnitState);
 
 #[derive(SystemParam)]
 pub(crate) struct AliveUnits<'w, 's> {
@@ -101,7 +101,7 @@ pub(crate) struct MilitaryUnits<'w, 's> {
 /// Units that just gained a `Combat` component.
 #[derive(SystemParam)]
 pub(crate) struct NewFighters<'w, 's> {
-    query: Query<'w, 's, (Entity, &'static Combat), Added<Combat>>,
+    query: Query<'w, 's, Entity, Added<Combat>>,
 }
 
 /// Events the attack loop sends to other systems.
@@ -413,10 +413,8 @@ fn add_combat_state_to_fighters(
     mut commands: Commands,
     new_fighters: NewFighters,
 ) {
-    for (entity, combat) in new_fighters.query.iter() {
-        if combat.auto_attack {
-            commands.entity(entity).insert((CombatState::default(), UnitState::Idle));
-        }
+    for entity in new_fighters.query.iter() {
+        commands.entity(entity).insert((CombatState::default(), UnitState::Idle));
     }
 }
 
@@ -426,11 +424,11 @@ fn update_combat_states(
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs();
-    for (_, mut state, combat, transform, movement, mut unit_state) in units.query.iter_mut() {
+    for (mut state, combat, movement, mut unit_state) in units.query.iter_mut() {
         if is_gathering_or_moving_state(&unit_state) {
             continue;
         }
-        let new_state = derive_combat_state(combat, transform, movement, &alive_transforms.query);
+        let new_state = derive_combat_state(combat, movement, &alive_transforms.query);
         if new_state != *unit_state {
             state.last_state_change = now;
             *unit_state = new_state;
@@ -452,13 +450,15 @@ fn is_gathering_or_moving_state(state: &UnitState) -> bool {
 
 fn derive_combat_state(
     combat: &Combat,
-    transform: &Transform,
     movement: Option<&Movement>,
     targets: &Query<&Transform, (With<RTSHealth>, Without<Dying>)>,
 ) -> UnitState {
     let Some(target) = combat.target else { return UnitState::Idle };
-    let Ok(target_tf) = targets.get(target) else { return UnitState::Idle };
-    if transform.translation.distance(target_tf.translation) <= combat.attack_range {
+    if targets.get(target).is_err() {
+        return UnitState::Idle;
+    }
+    // `is_attacking` is set by the attack loop using the same edge-distance range check it strikes with.
+    if combat.is_attacking {
         return UnitState::InCombat;
     }
     if movement.is_some_and(|m| m.target_position.is_some()) {

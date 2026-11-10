@@ -4,6 +4,9 @@
 //! `EntityFactory::spawn_building` to ensure consistent component bundles.
 
 use bevy::prelude::*;
+use bevy::ecs::system::SystemParam;
+use bevy::scene::SceneInstanceReady;
+use bevy::utils::HashMap;
 use crate::core::components::*;
 use crate::core::unit_stats;
 
@@ -58,6 +61,7 @@ impl EntityFactory {
         ));
 
         add_gatherer_if_needed(&mut entity, &unit_type);
+        entity.observe(style_unit_materials);
 
         entity.id()
     }
@@ -111,6 +115,52 @@ impl EntityFactory {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/// Gloss and self-glow applied to unit materials so they pop against the terrain.
+const UNIT_ROUGHNESS: f32 = 0.35;
+const UNIT_REFLECTANCE: f32 = 0.7;
+const UNIT_GLOW: f32 = 0.3;
+
+/// Styled copies keyed by (original material, is dark).
+type StyledMaterials = HashMap<(AssetId<StandardMaterial>, bool), Handle<StandardMaterial>>;
+
+/// A unit's identity, its scene hierarchy, and the mesh materials within it.
+#[derive(SystemParam)]
+struct UnitScene<'w, 's> {
+    units: Query<'w, 's, &'static RTSUnit>,
+    children: Query<'w, 's, &'static Children>,
+    materials: Query<'w, 's, &'static MeshMaterial3d<StandardMaterial>>,
+}
+
+/// Swaps a unit's materials for high-contrast copies (dark for player ants), cached so instances share them.
+fn style_unit_materials(
+    trigger: Trigger<SceneInstanceReady>,
+    mut commands: Commands,
+    scene: UnitScene,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut styled: Local<StyledMaterials>,
+) {
+    let Ok(unit) = scene.units.get(trigger.entity()) else { return };
+    let is_dark = unit.player_id == 1 && unit.unit_type == Some(UnitType::Fourmi);
+    for descendant in scene.children.iter_descendants(trigger.entity()) {
+        let Ok(original) = scene.materials.get(descendant) else { continue };
+        let key = (original.id(), is_dark);
+        let Some(handle) = styled.get(&key).cloned().or_else(|| {
+            let mut material = materials.get(&original.0)?.clone();
+            if is_dark {
+                material.base_color = material.base_color.darker(0.85);
+            }
+            material.perceptual_roughness = UNIT_ROUGHNESS;
+            material.reflectance = UNIT_REFLECTANCE;
+            material.emissive = LinearRgba::from(material.base_color) * UNIT_GLOW;
+            material.emissive_texture = material.base_color_texture.clone();
+            let handle = materials.add(material);
+            styled.insert(key, handle.clone());
+            Some(handle)
+        }) else { continue };
+        commands.entity(descendant).insert(MeshMaterial3d(handle));
+    }
+}
 
 fn add_gatherer_if_needed(entity: &mut EntityCommands, unit_type: &UnitType) {
     let gatherer = match unit_type {
@@ -207,11 +257,11 @@ fn unit_model_rotation(unit_type: &UnitType) -> Quat {
 fn unit_model_scale(unit_type: &UnitType) -> f32 {
     match unit_type {
         UnitType::Fourmi => 6.0,
-        UnitType::Bee => 2.6,
+        UnitType::Bee => 0.866,
         UnitType::CairnsBirdwing => 18.75,
         UnitType::Dragonfly => 100.0,
         UnitType::RolyPoly => 0.3,
-        UnitType::Scorpion => 10.0,
+        UnitType::Scorpion => 20.0,
         UnitType::GoliathBirdeater => 1.5,
         UnitType::RhinoBeetle => 5.0,
         UnitType::EmperorScorpion => 15.0,

@@ -87,8 +87,8 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     
     // Create shadow factor: areas facing away from light are darker
     // Base shadow level (ambient) + diffuse contribution
-    let ambient_level = 0.2; // Reduced minimum light level for deeper shadows
-    let diffuse_strength = 0.8; // Increased strength of directional lighting
+    let ambient_level = 0.2375; // Raised so terrain stays light and units stand out
+    let diffuse_strength = 0.775;
     let shadow_factor = ambient_level + (diffuse_strength * light_factor);
     
     // Blend textures based on height (similar to terrain generation logic)
@@ -96,7 +96,8 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let height_blend_threshold = 36.0; // Match terrain generation threshold
     let blend_factor = smoothstep(20.0, height_blend_threshold, height);
     
-    let base_color = mix(rocky_02_color, rocky_color, blend_factor);
+    // Lift toward pale tones so dark units contrast against the ground
+    let base_color = mix(mix(rocky_02_color, rocky_color, blend_factor), vec4<f32>(1.0), 0.0375);
     
     // Apply elevation-based shadows to final color
     return vec4<f32>(base_color.rgb * shadow_factor, base_color.a);

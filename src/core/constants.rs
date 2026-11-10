@@ -19,7 +19,7 @@ pub mod movement {
     /// Height units stand above the terrain surface.
     pub const DEFAULT_SPAWN_HEIGHT: f32 = 0.5;
     /// Maximum turning speed per frame.
-    pub const MAX_TURN_SPEED: f32 = 0.4;
+    pub const MAX_TURN_SPEED: f32 = 0.8;
 }
 
 // === CAMERA SYSTEM ===

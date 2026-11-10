@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 // Base unit statistics
 const BASE_HEALTH: f32 = 100.0;
-const BASE_DAMAGE: f32 = 20.0;
+const BASE_DAMAGE: f32 = 8.0;
 const BASE_SPEED: f32 = 80.0;
 const BASE_MELEE_RANGE: f32 = 3.0;
 const BASE_SIEGE_RANGE: f32 = 8.0;
@@ -115,6 +115,7 @@ fn generate_unit_stats(unit_type: &UnitType) -> UnitStatsConfig {
         collision_radius,
         animation_speed: match unit_type {
             UnitType::GoliathBirdeater => base.animation_speed * 3.0,
+            UnitType::Scorpion | UnitType::Fourmi => base.animation_speed * 2.0,
             _ => base.animation_speed,
         },
     }

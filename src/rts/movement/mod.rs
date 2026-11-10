@@ -124,6 +124,7 @@ type MovingUnitData = (
     &'static Route,
     &'static RTSUnit,
     Option<&'static Climbing>,
+    Option<&'static CombatState>,
 );
 
 /// Every unit that can move.
@@ -196,7 +197,7 @@ fn move_units(
     };
     units.query.par_iter_mut().for_each_init(
         || arrivals.borrow_local_mut(),
-        |local, (entity, mut tf, mut mv, route, rts_unit, climbing)| {
+        |local, (entity, mut tf, mut mv, route, rts_unit, climbing, combat_state)| {
             if step_unit(&mut tf, &mut mv, route, &ctx, Wander::of(entity, ctx.elapsed)) {
                 local.push(entity);
             }
@@ -204,7 +205,7 @@ fn move_units(
                 || ctx.normals.get_normal(tf.translation.x, tf.translation.z),
                 |c| c.normal,
             );
-            let heading = mv.current_velocity.try_normalize();
+            let heading = mv.current_velocity.try_normalize().or_else(|| direction_to_target(&tf, combat_state));
             update_rotation(&mut tf, heading, rts_unit, normal, ctx.dt);
         },
     );
@@ -270,7 +271,13 @@ fn clamp_to_map(tf: &mut Transform) {
     tf.translation.z = tf.translation.z.clamp(-b, b);
 }
 
-/// Tilts the unit to match the surface `normal`, turning to face `heading` if it is moving.
+/// Flat direction from a stationary unit to its combat target, so it faces what it attacks.
+fn direction_to_target(tf: &Transform, combat_state: Option<&CombatState>) -> Option<Vec3> {
+    let offset = combat_state?.target_position? - tf.translation;
+    Vec3::new(offset.x, 0.0, offset.z).try_normalize()
+}
+
+/// Tilts the unit to match the surface `normal`, turning to face `heading` if it has one.
 fn update_rotation(tf: &mut Transform, heading: Option<Vec3>, rts_unit: &RTSUnit, normal: Vec3, dt: f32) {
     let yaw = match heading {
         Some(dir) => facing_yaw(dir, rts_unit),

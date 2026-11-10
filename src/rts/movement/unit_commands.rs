@@ -13,7 +13,7 @@ use crate::core::GameSet;
 use crate::core::constants::resource_interaction::RESOURCE_CLICK_RADIUS;
 use crate::core::constants::ui::*;
 use crate::rts::combat::events::CombatStopEvent;
-use crate::rts::resource::events::SetTargetResourceEvent;
+use crate::rts::resource::events::{ClearTargetResourceEvent, ResetCargoEvent, SetTargetResourceEvent};
 use super::events::{MovementTargetEvent, UnitArrivedEvent};
 use super::formation_events::FormationMoveEvent;
 
@@ -38,6 +38,8 @@ struct CommandTargets<'w, 's> {
     move_events: EventWriter<'w, MovementTargetEvent>,
     formation_events: EventWriter<'w, FormationMoveEvent>,
     set_target_events: EventWriter<'w, SetTargetResourceEvent>,
+    clear_target_events: EventWriter<'w, ClearTargetResourceEvent>,
+    reset_cargo_events: EventWriter<'w, ResetCargoEvent>,
     combat_stop_events: EventWriter<'w, CombatStopEvent>,
     commands: Commands<'w, 's>,
 }
@@ -85,13 +87,7 @@ fn right_click_command(
     // Per-entity: state, resource target, combat stop.
     for &(entity, has_gatherer, has_combat) in &selected {
         if has_gatherer {
-            if let Some((resource_entity, _, resource_type)) = &resource_click {
-                targets.set_target_events.send(SetTargetResourceEvent {
-                    gatherer: entity,
-                    target_resource: *resource_entity,
-                    resource_type: resource_type.clone(),
-                });
-            }
+            issue_gather_order(&mut targets, entity, &resource_click);
         }
         targets.commands.entity(entity).insert(UnitState::Moving);
         if has_combat {
@@ -106,6 +102,21 @@ fn right_click_command(
     } else if let Some(entity) = entities.into_iter().next() {
         targets.move_events.send(MovementTargetEvent::new(entity, destination));
     }
+}
+
+/// Points a gatherer at the clicked resource, or abandons its gather cycle (dropping cargo)
+/// when ordered anywhere else so it doesn't drift back to gathering on arrival.
+fn issue_gather_order(targets: &mut CommandTargets, gatherer: Entity, resource_click: &Option<(Entity, Vec3, ResourceType)>) {
+    let Some((resource_entity, _, resource_type)) = resource_click else {
+        targets.clear_target_events.send(ClearTargetResourceEvent { gatherer, clear_resource_type: true });
+        targets.reset_cargo_events.send(ResetCargoEvent { gatherer });
+        return;
+    };
+    targets.set_target_events.send(SetTargetResourceEvent {
+        gatherer,
+        target_resource: *resource_entity,
+        resource_type: resource_type.clone(),
+    });
 }
 
 /// Returns the nearest ResourceSource within click radius, if any.
