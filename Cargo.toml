@@ -31,7 +31,7 @@ inherits = "release"
 debug = true
 
 [dependencies]
-bevy = { version = "0.15", features = ["jpeg", "trace"] }
+bevy = { version = "0.15", features = ["jpeg", "webp", "trace"] }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 noise = "0.9"

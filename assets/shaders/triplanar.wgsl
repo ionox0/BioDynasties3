@@ -6,24 +6,45 @@
 @group(2) @binding(3) var rocky_sampler_02: sampler;
 @group(2) @binding(4) var<uniform> light_direction: vec3<f32>;
 
-fn hash2(p: vec2<f32>) -> f32 {
-    let q = fract(p * vec2<f32>(127.1, 311.7));
-    return fract(dot(q, q + 19.19) * 43758.5453);
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    let q = vec2<f32>(dot(p, vec2<f32>(127.1, 311.7)), dot(p, vec2<f32>(269.5, 183.3)));
+    return fract(sin(q) * 43758.5453);
 }
 
-fn rotate_uv(uv: vec2<f32>, tile: vec2<f32>) -> vec2<f32> {
-    let r = floor(hash2(tile) * 4.0);
-    let c = uv - 0.5;
-    if r < 1.0       { return c + 0.5; }
-    else if r < 2.0  { return vec2<f32>(-c.y, c.x) + 0.5; }
-    else if r < 3.0  { return vec2<f32>(-c.x, -c.y) + 0.5; }
-    else             { return vec2<f32>(c.y, -c.x) + 0.5; }
+// Sample with a random rotation and offset chosen per hex cell, so no two cells repeat.
+fn sample_cell(texture: texture_2d<f32>, tex_sampler: sampler, uv: vec2<f32>, cell: vec2<f32>) -> vec4<f32> {
+    let h = hash22(cell);
+    let angle = h.x * 6.2831853;
+    let rotation = mat2x2<f32>(vec2<f32>(cos(angle), sin(angle)), vec2<f32>(-sin(angle), cos(angle)));
+    let p = rotation * uv + h * 10.0;
+    // Bevy samplers clamp by default, so wrap manually; unwrapped derivatives keep mip selection seamless.
+    return textureSampleGrad(texture, tex_sampler, fract(p), dpdx(p), dpdy(p));
 }
 
+// Hex tiling (Heitz & Neyret / Mikkelsen): blend three randomised samples from the
+// surrounding triangle-grid vertices to hide seams and repetition.
 fn sample_tiled(texture: texture_2d<f32>, tex_sampler: sampler, uv: vec2<f32>) -> vec4<f32> {
-    let tile = floor(uv);
-    let local = rotate_uv(fract(uv), tile);
-    return textureSample(texture, tex_sampler, local);
+    let hex_cells_per_tile = 2.0;
+    let skewed = mat2x2<f32>(vec2<f32>(1.0, 0.0), vec2<f32>(-0.57735027, 1.15470054)) * (uv * hex_cells_per_tile * 1.7320508);
+    let base = floor(skewed);
+    let f = fract(skewed);
+    let z = 1.0 - f.x - f.y;
+    var weights = vec3<f32>(z, f.y, f.x);
+    var v1 = base;
+    var v2 = base + vec2<f32>(0.0, 1.0);
+    var v3 = base + vec2<f32>(1.0, 0.0);
+    if z <= 0.0 {
+        weights = vec3<f32>(-z, 1.0 - f.y, 1.0 - f.x);
+        v1 = base + vec2<f32>(1.0, 1.0);
+        v2 = base + vec2<f32>(1.0, 0.0);
+        v3 = base + vec2<f32>(0.0, 1.0);
+    }
+    // Sharpen weights so blends stay crisp instead of washing out contrast.
+    let sharpened = pow(weights, vec3<f32>(3.0));
+    let w = sharpened / (sharpened.x + sharpened.y + sharpened.z);
+    return sample_cell(texture, tex_sampler, uv, v1) * w.x
+         + sample_cell(texture, tex_sampler, uv, v2) * w.y
+         + sample_cell(texture, tex_sampler, uv, v3) * w.z;
 }
 
 // Sample triplanar textures for a given texture and return blended result

@@ -68,7 +68,99 @@ impl Plugin for StaticTerrainPlugin {
         let normals = TerrainNormals::build(&terrain);
         app.insert_resource(terrain)
             .insert_resource(normals)
-            .add_systems(Startup, spawn_terrain_mesh);
+            .add_event::<TerrainTextureSelected>()
+            .add_systems(Startup, spawn_terrain_mesh)
+            .add_systems(Update, (apply_terrain_texture, generate_terrain_mipmaps));
+    }
+}
+
+/// Which height band of the terrain a texture applies to.
+#[derive(Clone, Copy, Debug)]
+pub enum TerrainLayer {
+    Low,
+    High,
+}
+
+/// Request to swap the texture of one terrain layer.
+#[derive(Event)]
+pub struct TerrainTextureSelected {
+    pub layer: TerrainLayer,
+    pub path: String,
+}
+
+/// Gives the terrain's active textures a mip chain once loaded; Bevy doesn't generate mips for JPG/WebP,
+/// and without them zoomed-out sampling thrashes the GPU texture cache.
+fn generate_terrain_mipmaps(
+    terrain: Query<&MeshMaterial3d<SimpleMaterial>>,
+    materials: Res<Assets<SimpleMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let textures = terrain
+        .iter()
+        .filter_map(|handle| materials.get(handle))
+        .flat_map(|material| [material.grass_texture.id(), material.dirt_texture.id()]);
+    for id in textures {
+        let is_missing_mips = images.get(id).is_some_and(|image| image.texture_descriptor.mip_level_count == 1);
+        if !is_missing_mips {
+            continue;
+        }
+        if let Some(image) = images.get_mut(id) {
+            build_mip_chain(image);
+        }
+    }
+}
+
+/// Appends 2×2 box-filtered mip levels down to 1×1 (levels are stored back to back in `data`).
+fn build_mip_chain(image: &mut Image) {
+    use bevy::render::render_resource::TextureFormat;
+    if !matches!(image.texture_descriptor.format, TextureFormat::Rgba8UnormSrgb | TextureFormat::Rgba8Unorm) {
+        return;
+    }
+    let (mut width, mut height) = (image.width(), image.height());
+    let (mut level_start, mut level_count) = (0, 1);
+    while width > 1 || height > 1 {
+        let level = downsample_rgba8(&image.data[level_start..], width, height);
+        level_start = image.data.len();
+        image.data.extend(level);
+        (width, height) = ((width / 2).max(1), (height / 2).max(1));
+        level_count += 1;
+    }
+    image.texture_descriptor.mip_level_count = level_count;
+}
+
+fn downsample_rgba8(source: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let (width, height) = (width as usize, height as usize);
+    let (out_width, out_height) = ((width / 2).max(1), (height / 2).max(1));
+    let texel = |x: usize, y: usize, channel: usize| u32::from(source[(y.min(height - 1) * width + x.min(width - 1)) * 4 + channel]);
+    let mut output = Vec::with_capacity(out_width * out_height * 4);
+    for y in 0..out_height {
+        for x in 0..out_width {
+            for channel in 0..4 {
+                let (sx, sy) = (x * 2, y * 2);
+                let sum = texel(sx, sy, channel) + texel(sx + 1, sy, channel) + texel(sx, sy + 1, channel) + texel(sx + 1, sy + 1, channel);
+                output.push(((sum + 2) / 4) as u8);
+            }
+        }
+    }
+    output
+}
+
+/// Applies texture selections to the terrain material.
+fn apply_terrain_texture(
+    mut events: EventReader<TerrainTextureSelected>,
+    terrain: Query<&MeshMaterial3d<SimpleMaterial>>,
+    mut materials: ResMut<Assets<SimpleMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    for event in events.read() {
+        for handle in &terrain {
+            let Some(material) = materials.get_mut(handle) else { continue };
+            let texture = asset_server.load(&event.path);
+            match event.layer {
+                TerrainLayer::Low => material.dirt_texture = texture,
+                TerrainLayer::High => material.grass_texture = texture,
+            }
+        }
     }
 }
 

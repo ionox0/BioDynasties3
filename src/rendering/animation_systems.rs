@@ -163,12 +163,13 @@ fn clip_set(unit_type: &UnitType) -> ClipSet {
     match unit_type {
         // Meshy models with generated clips: 0 Walk, 1 Idle, 2 Attack, 3 Death.
         UnitType::Fourmi | UnitType::EmperorScorpion | UnitType::MajestyBeetle => set(0, Some(1), Some(2), Some(3)),
-        UnitType::Bee => set(1, Some(0), None, None), // 0 idle, 1 hover
+        UnitType::Bee => set(1, Some(0), Some(3), None), // 0 idle, 1 hover, 3 sting
         UnitType::Scorpion => set(4, Some(3), Some(0), Some(1)), // Area Attack, Death, Defend, Idle, Walk
         UnitType::RhinoBeetle => set(3, Some(2), Some(0), Some(1)), // attack, death, idle, walk
-        // Single-clip flyers keep flapping while idle.
-        UnitType::Dragonfly | UnitType::CairnsBirdwing => set(0, Some(0), None, None),
-        UnitType::RolyPoly | UnitType::GoliathBirdeater => set(0, None, None, None),
+        // Flyers keep flapping while idle; their attack clip is layered on the flight loop.
+        UnitType::Dragonfly | UnitType::CairnsBirdwing => set(0, Some(0), Some(1), None),
+        UnitType::RolyPoly => set(0, None, Some(1), None), // 0 walk, 1 ram
+        UnitType::GoliathBirdeater => set(0, None, Some(2), None), // 0 walk, 2 fang strike
     }
 }
 

@@ -61,7 +61,6 @@ impl EntityFactory {
         ));
 
         add_gatherer_if_needed(&mut entity, &unit_type);
-        entity.observe(style_unit_materials);
 
         entity.id()
     }
@@ -126,21 +125,23 @@ type StyledMaterials = HashMap<(AssetId<StandardMaterial>, bool), Handle<Standar
 
 /// A unit's identity, its scene hierarchy, and the mesh materials within it.
 #[derive(SystemParam)]
-struct UnitScene<'w, 's> {
+pub(crate) struct UnitScene<'w, 's> {
     units: Query<'w, 's, &'static RTSUnit>,
     children: Query<'w, 's, &'static Children>,
     materials: Query<'w, 's, &'static MeshMaterial3d<StandardMaterial>>,
 }
 
 /// Swaps a unit's materials for high-contrast copies (dark for player ants), cached so instances share them.
-fn style_unit_materials(
+/// Registered once as a global observer: per-entity observers would each get their own cache,
+/// giving every unit unique materials and defeating draw batching.
+pub(crate) fn style_unit_materials(
     trigger: Trigger<SceneInstanceReady>,
     mut commands: Commands,
     scene: UnitScene,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut styled: Local<StyledMaterials>,
 ) {
-    let Ok(unit) = scene.units.get(trigger.entity()) else { return };
+    let Some(unit) = scene.units.get(trigger.entity()).ok().filter(|u| u.unit_type.is_some()) else { return };
     let is_dark = unit.player_id == 1 && unit.unit_type == Some(UnitType::Fourmi);
     for descendant in scene.children.iter_descendants(trigger.entity()) {
         let Ok(original) = scene.materials.get(descendant) else { continue };

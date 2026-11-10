@@ -61,6 +61,7 @@ fn main() {
             UIPlugin,
         ))
         .add_plugins((ProductionPlugin, AIPlugin, CargoIndicatorPlugin))
+        .add_observer(entities::entity_factory::style_unit_materials)
         .configure_sets(Update, GameSet::RtsUpdate.before(GameSet::AiGoals))
         .add_systems(Update, apply_deferred
             .after(GameSet::RtsUpdate)
